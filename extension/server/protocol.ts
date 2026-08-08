@@ -1,0 +1,95 @@
+export interface ChoiceOption {
+  id: string;
+  label: string;
+}
+
+export interface SingleChoiceInteraction {
+  id: string;
+  type: "single_choice";
+  title?: string;
+  question: string;
+  options: ChoiceOption[];
+  conceptId?: string;
+  allowSkip: boolean;
+  createdAt: number;
+}
+
+export interface SingleChoiceAnswer {
+  optionId: string;
+}
+
+export interface FreeResponseInteraction {
+  id: string;
+  type: "free_response";
+  question: string;
+  placeholder?: string;
+  multiline: boolean;
+  conceptId?: string;
+  createdAt: number;
+}
+
+export interface FreeResponseAnswer {
+  text: string;
+}
+
+export interface CodeExerciseInteraction {
+  id: string;
+  type: "code";
+  title?: string;
+  instructions: string;
+  language: string;
+  starterCode: string;
+  readOnlyRanges?: Array<{ start: number; end: number }>;
+  conceptId?: string;
+  createdAt: number;
+}
+
+export interface CodeExerciseAnswer {
+  language: string;
+  code: string;
+}
+
+export type LearningInteraction =
+  | SingleChoiceInteraction
+  | FreeResponseInteraction
+  | CodeExerciseInteraction;
+
+export interface SingleChoiceResolvedAnswer {
+  interactionId: string;
+  type: "single_choice";
+  answer: SingleChoiceAnswer;
+  responseTimeMs: number;
+}
+
+export interface FreeResponseResolvedAnswer {
+  interactionId: string;
+  type: "free_response";
+  answer: FreeResponseAnswer;
+  responseTimeMs: number;
+}
+
+export interface CodeExerciseResolvedAnswer {
+  interactionId: string;
+  type: "code";
+  answer: CodeExerciseAnswer;
+  responseTimeMs: number;
+}
+
+export type ResolvedAnswer =
+  | SingleChoiceResolvedAnswer
+  | FreeResponseResolvedAnswer
+  | CodeExerciseResolvedAnswer;
+
+export interface InteractionSubmission {
+  interactionId: string;
+  answer: unknown;
+  clientTimestamp: number;
+}
+
+export type SubmitResult =
+  | { ok: true; answer: ResolvedAnswer }
+  | {
+      ok: false;
+      reason: "not_found" | "already_resolved" | "invalid_answer";
+      message: string;
+    };
