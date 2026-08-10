@@ -135,8 +135,24 @@ export interface LearningErrorEvent {
   message: string;
 }
 
+/** Tutor's final visible assistant text (spec 26; only text, never reasoning). */
+export interface TutorMessageEvent {
+  event: "tutor.message";
+  role: "assistant";
+  text: string;
+}
+
+/** Tutor waiting for the learner (learning tool running) or idle (spec 26). */
+export interface TutorStatusEvent {
+  event: "tutor.status";
+  status: "waiting" | "idle";
+  toolName?: string;
+}
+
 export type LearningEvent =
   | InteractionPresentedEvent
   | InteractionResolvedEvent
   | SessionUpdatedEvent
-  | LearningErrorEvent;
+  | LearningErrorEvent
+  | TutorMessageEvent
+  | TutorStatusEvent;

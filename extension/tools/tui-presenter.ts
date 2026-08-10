@@ -66,6 +66,59 @@ export function createBrokerBackedTuiPresenter(
   };
 }
 
+/**
+ * uiMode auto (spec 28): with a web client the interaction is presented to
+ * the broker only and waits for the browser to submit via the server; the
+ * TUI is not touched. Without a web client, fully reuses
+ * createBrokerBackedTuiPresenter (broker + TUI race).
+ */
+export function createModeAwarePresenter(
+  broker: InteractionBroker,
+  hasWebClient: () => boolean,
+  now: () => number = Date.now
+): TuiLearningPresenter {
+  const fallback = createBrokerBackedTuiPresenter(broker, now);
+  return {
+    presentSingleChoice: (interaction, signal, ctx) =>
+      hasWebClient()
+        ? presentViaBroker(broker, interaction, signal)
+        : fallback.presentSingleChoice(interaction, signal, ctx),
+    presentFreeResponse: (interaction, signal, ctx) =>
+      hasWebClient()
+        ? presentViaBroker(broker, interaction, signal)
+        : fallback.presentFreeResponse(interaction, signal, ctx),
+    presentCode: (interaction, signal, ctx) =>
+      hasWebClient()
+        ? presentViaBroker(broker, interaction, signal)
+        : fallback.presentCode(interaction, signal, ctx)
+  };
+}
+
+function presentViaBroker(
+  broker: InteractionBroker,
+  interaction: SingleChoiceInteraction,
+  signal: AbortSignal | undefined
+): Promise<SingleChoiceResolvedAnswer>;
+function presentViaBroker(
+  broker: InteractionBroker,
+  interaction: FreeResponseInteraction,
+  signal: AbortSignal | undefined
+): Promise<FreeResponseResolvedAnswer>;
+function presentViaBroker(
+  broker: InteractionBroker,
+  interaction: CodeExerciseInteraction,
+  signal: AbortSignal | undefined
+): Promise<CodeExerciseResolvedAnswer>;
+function presentViaBroker(
+  broker: InteractionBroker,
+  interaction: LearningInteraction,
+  signal: AbortSignal | undefined
+): Promise<ResolvedAnswer> {
+  // Web-only path: the browser submits through the server; broker.present
+  // rejects on tool abort, so the tool surfaces the cancellation normally.
+  return broker.present(interaction, signal);
+}
+
 export async function presentSingleChoiceInTui(
   interaction: SingleChoiceInteraction,
   signal: AbortSignal | undefined,

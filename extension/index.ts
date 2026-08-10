@@ -6,6 +6,7 @@ import { LearningServer } from "./server/learning-server.js";
 import { LearningStateStore } from "./state/learning-state.js";
 import { registerLearningStatePersistence } from "./state/session-persistence.js";
 import { registerLearningTools } from "./tools/index.js";
+import { registerTranscriptSync } from "./transcript-sync.js";
 import { registerTutorPrompt } from "./tutor-prompt.js";
 
 export default function learningExtension(pi: ExtensionAPI): void {
@@ -13,9 +14,10 @@ export default function learningExtension(pi: ExtensionAPI): void {
   const broker = new InteractionBroker();
   const server = new LearningServer({ broker, state });
 
-  registerLearningTools(pi, { broker });
+  registerLearningTools(pi, { broker, server });
   registerLearningCommands(pi, { state, broker, server });
   registerTutorPrompt(pi, { state });
+  registerTranscriptSync(pi, server);
   registerLearningStatePersistence(pi, state);
 
   pi.on("session_shutdown", async () => {

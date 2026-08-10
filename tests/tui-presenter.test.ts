@@ -1,10 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAskCodeTool } from "../extension/tools/ask-code.js";
 import { createAskFreeResponseTool } from "../extension/tools/ask-free-response.js";
 import {
   createBrokerBackedTuiPresenter,
+  createModeAwarePresenter,
   type TuiLearningPresenter
 } from "../extension/tools/tui-presenter.js";
 import { InteractionBroker } from "../extension/server/interaction-broker.js";
@@ -190,5 +191,111 @@ describe("TUI custom editor presenter (ctx.mode === 'tui')", () => {
     } finally {
       process.removeListener("unhandledRejection", onUnhandled);
     }
+  });
+});
+
+describe("createModeAwarePresenter (uiMode auto)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function singleChoice(id: string) {
+    return {
+      id,
+      type: "single_choice" as const,
+      question: `Question ${id}`,
+      options: [
+        { id: "A", label: "First" },
+        { id: "B", label: "Second" }
+      ],
+      allowSkip: true,
+      createdAt: 5_000
+    };
+  }
+
+  it("presents to the broker only and never touches the TUI when a web client is connected", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(5_100);
+    const broker = new InteractionBroker();
+    const select = vi.fn();
+    const ctx = { hasUI: false, ui: { select } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => true);
+    const interaction = singleChoice("web_presented");
+
+    const answerPromise = presenter.presentSingleChoice(
+      interaction,
+      undefined,
+      ctx
+    );
+
+    expect(select).not.toHaveBeenCalled();
+    expect(broker.getPending()).toEqual([interaction]);
+
+    const submitted = broker.submit({
+      interactionId: interaction.id,
+      answer: { optionId: "B" },
+      clientTimestamp: 5_100
+    });
+    expect(submitted.ok).toBe(true);
+
+    const answer = await answerPromise;
+    expect(answer).toEqual({
+      interactionId: interaction.id,
+      type: "single_choice",
+      answer: { optionId: "B" },
+      responseTimeMs: 100
+    });
+    expect(broker.getPending()).toEqual([]);
+  });
+
+  it("falls back to the TUI select when no web client is connected", async () => {
+    const broker = new InteractionBroker();
+    const select = vi.fn().mockResolvedValue("2. Second");
+    const ctx = { hasUI: true, ui: { select } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => false);
+    const interaction = singleChoice("tui_fallback");
+
+    const answer = await presenter.presentSingleChoice(
+      interaction,
+      undefined,
+      ctx
+    );
+
+    expect(select).toHaveBeenCalledWith(
+      "Question tui_fallback",
+      ["1. First", "2. Second"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    expect(answer.answer).toEqual({ optionId: "B" });
+    expect(broker.getPending()).toEqual([]);
+  });
+
+  it("routes per call: web first, then TUI once the client disconnects", async () => {
+    const broker = new InteractionBroker();
+    let webConnected = true;
+    const select = vi.fn().mockResolvedValue("1. First");
+    const ctx = { hasUI: true, ui: { select } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => webConnected);
+
+    const first = presenter.presentSingleChoice(
+      singleChoice("web_then_tui_a"),
+      undefined,
+      ctx
+    );
+    expect(select).not.toHaveBeenCalled();
+    broker.submit({
+      interactionId: "web_then_tui_a",
+      answer: { optionId: "A" },
+      clientTimestamp: 5_200
+    });
+    await expect(first).resolves.toMatchObject({ answer: { optionId: "A" } });
+
+    webConnected = false;
+    const second = await presenter.presentSingleChoice(
+      singleChoice("web_then_tui_b"),
+      undefined,
+      ctx
+    );
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(second.answer).toEqual({ optionId: "A" });
   });
 });
