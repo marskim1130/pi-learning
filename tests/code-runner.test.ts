@@ -147,6 +147,31 @@ describe("LocalCodeRunner", { timeout: 15_000 }, () => {
     );
   });
 
+  // 原型链污染键（__proto__/constructor）不能绕过白名单；当前行为是 reject
+  //（虽是 TypeError 而非 Unsupported language，但绝不可执行）。
+  it("rejects prototype-chain keys as language", async () => {
+    for (const language of ["__proto__", "constructor", "toString"]) {
+      await expect(runner.run({ language, code: "console.log(1)" })).rejects.toThrow();
+    }
+  });
+
+  it("cleans up the temp directory on abort", async () => {
+    const tmpRoot = mkdtempSync(path.join(tmpdir(), "pi-learn-test-"));
+    try {
+      const scoped = new LocalCodeRunner({ tmpRoot });
+      const controller = new AbortController();
+      const pending = scoped.run(
+        { language: "node", code: "setTimeout(() => {}, 5000)" },
+        controller.signal
+      );
+      setTimeout(() => controller.abort(), 100);
+      await expect(pending).rejects.toThrow(/aborted/i);
+      expect(readdirSync(tmpRoot)).toEqual([]);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(!pythonAvailable)("runs python when the interpreter is available", async () => {
     const result = await runner.run({ language: "python", code: 'print("hi")' });
     expect(result.exitCode).toBe(0);

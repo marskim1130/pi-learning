@@ -528,6 +528,26 @@ describe("LearningServer HTTP API", () => {
     }
   });
 
+  it("accepts timeoutMs at the boundary values 100 and 30000", async () => {
+    for (const timeoutMs of [100, 30_000]) {
+      const response = await fetch(`${origin}/api/code/run`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ language: "node", code: "console.log(1)", timeoutMs })
+      });
+      expect(response.status).toBe(200);
+    }
+  });
+
+  it("rejects an oversized request body with 413", async () => {
+    const response = await fetch(`${origin}/api/code/run`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ language: "node", code: "x".repeat(300 * 1024) })
+    });
+    expect(response.status).toBe(413);
+  });
+
   it("runs node code end-to-end and returns the result", async () => {
     const response = await fetch(`${origin}/api/code/run`, {
       method: "POST",
