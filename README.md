@@ -109,12 +109,13 @@ npm run pi
 
 **交互路由**：`learning_ask_*` 每次调用时检查服务器是否有活跃 SSE 客户端——有则只走 Web（等浏览器提交，不弹 TUI 对话框）；无则回退 TUI（单选用 `ctx.ui.select`，多选用循环选择 + "✔ 完成"，多行/代码用 `ctx.ui.custom + CustomEditor`）。
 
-**Tutor 文本同步**：`message_update` 的 assistant 可见文本经 100ms 节流以 `tutor.message` 事件流式同步（只取 `text` 内容，不含 reasoning），`message_end` 广播 `done: true` 终帧；`learning_*` 工具执行时广播 `waiting` 状态，`agent_settled` / `tool_execution_end` 广播 `idle`。Transcript 用 marked 渲染 Markdown（代码块带深色样式；内容来自本地模型，未消毒，接入外部输入前应加 DOMPurify）。
+**Tutor 文本同步**：`message_update` 的 assistant 可见文本经 100ms 节流以 `tutor.message` 事件流式同步（只取 `text` 内容，不含 reasoning），`message_end` 广播 `done: true` 终帧；`learning_*` 工具执行时广播 `waiting` 状态，`agent_settled` / `tool_execution_end` 广播 `idle`。Transcript 用 marked 渲染 Markdown（代码块带深色样式），并用 KaTeX 渲染 `$$...$$` / `$...$` 公式；内容来自本地模型，未消毒，接入外部输入前应加 DOMPurify。
+
+**代码自测（规格 25）**：`POST /api/code/run` 在本地安全 runner 中执行学习者代码（只支持 python/node，白名单语言 + 程序定义命令模板 + 固定文件名 + 独立临时目录 + env 白名单不传 API key + 8s 超时 + stdout/stderr 各 64KB 截断 + 结束后清理）。Web 代码题在语言为 python/node 时显示 Run 按钮，结果（stdout/stderr/退出码/超时）只展示给学习者，**不进入 tool result**——提交给模型评阅的代码契约不变。
 
 **Mastery 更新**：Tutor 评估答案后调用 `learning_record_attempt`（outcome: correct/partial/incorrect；evidenceType: choice/free_response/code）。应用层按规格 16.1 的透明 heuristic 更新掌握度：初始 0.20、正确单选 +0.08 / 开放 +0.12 / 代码 +0.15、错误 -0.08、partial -0.04，clamp 0..1；超过 0.75 要求最近连续正确中出现过至少两种 evidence 形式（一道单选不能直升掌握）。每次 state 变更广播 `session.updated`。
 
 **已知限制**：无 KaTeX 数学渲染；Monaco 仅语法高亮，无 Language Server；Tutor 文本同步依赖 `npm run build:web` 后的前端（前端已支持，构建即可用）。
-
 ## 架构
 
 ```text
@@ -134,7 +135,7 @@ Pi Extension entry
 
 ## 已知限制
 
-- 当前实现覆盖规格 Milestone 0-5 主体（TUI + Web 往返闭环 + MultiChoice + mastery + 流式 transcript/Markdown），未完成项：KaTeX 数学渲染、Monaco Language Server、`readOnlyRanges` 落地、代码 runner（规格 25，安全隔离未做前只提交不执行）、跨 session 长期 learner profile（SQLite）。
+- 当前实现覆盖规格 Milestone 0-7 主体（TUI + Web 往返闭环 + MultiChoice + mastery + 流式 transcript/Markdown/KaTeX + 安全本地代码 runner + readOnlyRanges + 组件单测），未完成项：Monaco Language Server、代码 runner 的 CPU/内存限额与子进程树清理（Windows kill 只杀直接子进程）、跨 session 长期 learner profile（SQLite）、TUI 多选升级（等 pi-tui 多选组件）。
 - `allowSkip` 已进入单选/多选 interaction 协议，但本阶段没有定义结构化 skip answer，因此不展示 Skip 选项。
 - TUI 模式的代码/多行回答使用可响应 AbortSignal 的 `ctx.ui.custom()` 编辑器；非 TUI 模式仍受 Pi `ctx.ui.editor()` 不接受 AbortSignal 的限制。
 - TUI 多选是逐项循环选择 + "✔ 完成"（pi-tui 无多选组件）；Web 端是完整 checkbox 交互。
