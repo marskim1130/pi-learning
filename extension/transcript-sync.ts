@@ -52,7 +52,7 @@ export function registerTranscriptSync(
 ): void {
   pi.on("message_end", (event) => {
     const text = extractAssistantText(event.message);
-    if (text === undefined || text === "") {
+    if (text === undefined || text.trim() === "") {
       return;
     }
     server.broadcastTutorMessage("assistant", text);

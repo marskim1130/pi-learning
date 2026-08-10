@@ -121,6 +121,16 @@ describe("registerTranscriptSync", () => {
     expect(server.broadcastTutorMessage).not.toHaveBeenCalled();
   });
 
+  it("does not broadcast whitespace-only text", () => {
+    const { pi, emit } = createMockPi();
+    const server = createSpyServer();
+    registerTranscriptSync(pi, server);
+
+    emit("message_end", { type: "message_end", message: { role: "assistant", content: "   \n\t  " } });
+
+    expect(server.broadcastTutorMessage).not.toHaveBeenCalled();
+  });
+
   it("broadcasts waiting only for learning_ tools on tool_execution_start", () => {
     const { pi, emit } = createMockPi();
     const server = createSpyServer();
