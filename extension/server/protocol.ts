@@ -159,11 +159,20 @@ export interface LearningErrorEvent {
   message: string;
 }
 
-/** Tutor's final visible assistant text (spec 26; only text, never reasoning). */
+/**
+ * Tutor's visible assistant text (spec 26; only text, never reasoning).
+ * Streaming: done=false frames carry partial text keyed by messageId;
+ * the final done=true frame replaces them. Compatible with pre-streaming
+ * clients (they ignore messageId/done and append every frame).
+ */
 export interface TutorMessageEvent {
   event: "tutor.message";
   role: "assistant";
   text: string;
+  /** Stable per pi message: AssistantMessage.responseId, or a local seq fallback. */
+  messageId?: string;
+  /** false = streaming partial frame; true = final text. */
+  done: boolean;
 }
 
 /** Tutor waiting for the learner (learning tool running) or idle (spec 26). */

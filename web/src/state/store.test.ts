@@ -218,4 +218,58 @@ describe("web workspace store SSE handling", () => {
     es2?.dispatch("interaction.presented", { interaction: singleChoice("stale_1") });
     expect(useLearningWorkspace.getState().pending).toHaveLength(1);
   });
+
+  it("streaming tutor.message merges partial frames by messageId, done:true finalizes in place", () => {
+    useLearningWorkspace.getState().connect();
+    const es = FakeEventSource.last();
+    expect(es).not.toBeNull();
+
+    es?.dispatch("tutor.message", {
+      role: "assistant",
+      text: "First",
+      messageId: "m1",
+      done: false
+    });
+    es?.dispatch("tutor.message", {
+      role: "assistant",
+      text: "First second",
+      messageId: "m1",
+      done: false
+    });
+
+    let state = useLearningWorkspace.getState();
+    expect(state.transcript).toHaveLength(1);
+    expect(state.transcript[0]?.text).toBe("First second");
+    expect(state.transcript[0]?.done).toBe(false);
+    const entryId = state.transcript[0]?.id;
+
+    es?.dispatch("tutor.message", {
+      role: "assistant",
+      text: "First second final",
+      messageId: "m1",
+      done: true
+    });
+
+    state = useLearningWorkspace.getState();
+    expect(state.transcript).toHaveLength(1); // 同 messageId 原地替换，不追加
+    expect(state.transcript[0]?.text).toBe("First second final");
+    expect(state.transcript[0]?.done).toBe(true);
+    expect(state.transcript[0]?.id).toBe(entryId); // 保留原 id（React key 稳定）
+  });
+
+  it("tutor.message without messageId appends; missing done defaults to final", () => {
+    useLearningWorkspace.getState().connect();
+    const es = FakeEventSource.last();
+    expect(es).not.toBeNull();
+
+    es?.dispatch("tutor.message", { role: "assistant", text: "A" });
+    es?.dispatch("tutor.message", { role: "assistant", text: "B" });
+
+    const state = useLearningWorkspace.getState();
+    expect(state.transcript).toHaveLength(2); // 旧式消息（无 id）按追加处理
+    expect(state.transcript[0]?.text).toBe("A");
+    expect(state.transcript[1]?.text).toBe("B");
+    expect(state.transcript[0]?.done).toBe(true); // 兼容旧 server：视为最终帧
+    expect(state.transcript[0]?.messageId).toBeUndefined();
+  });
 });

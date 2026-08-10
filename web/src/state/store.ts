@@ -22,6 +22,10 @@ export interface TranscriptEntry {
   answerText?: string;
   role?: string;
   text?: string;
+  /** 流式合并 key（server 透传的 messageId）；缺省为旧版消息，只能追加。 */
+  messageId?: string;
+  /** false = 流式中间帧，true = 最终帧（缺省视为 true，兼容旧 server）。 */
+  done?: boolean;
   status?: string;
   time: number;
 }
@@ -196,17 +200,18 @@ function handleSseEvent(event: MessageEvent): void {
       const role = data.role;
       const text = data.text;
       if (typeof role === "string" && typeof text === "string") {
+        const messageId =
+          typeof data.messageId === "string" ? data.messageId : undefined;
+        // 缺省视为最终帧：兼容旧 server（无 done/messageId 字段）。
+        const done = data.done !== false;
         store.setState((state) => ({
-          transcript: [
-            ...state.transcript,
-            {
-              id: crypto.randomUUID(),
-              kind: "tutor_message",
-              role,
-              text,
-              time: Date.now()
-            }
-          ]
+          transcript: upsertTutorMessage(
+            state.transcript,
+            role,
+            text,
+            messageId,
+            done
+          )
         }));
       }
       break;
@@ -256,6 +261,43 @@ function upsertPending(
 ): LearningInteraction[] {
   const existing = pending.some((p) => p.id === interaction.id);
   return existing ? pending : [...pending, interaction];
+}
+
+/**
+ * 流式合并（spec 26）：同 messageId 的帧原地替换 text（保留原 id），
+ * done:true 直接替换/落定；无 messageId 的旧式消息按追加处理。
+ */
+function upsertTutorMessage(
+  transcript: TranscriptEntry[],
+  role: string,
+  text: string,
+  messageId: string | undefined,
+  done: boolean
+): TranscriptEntry[] {
+  if (messageId !== undefined) {
+    const existing = transcript.find(
+      (t) => t.kind === "tutor_message" && t.messageId === messageId
+    );
+    if (existing !== undefined) {
+      return transcript.map((t) =>
+        t === existing
+          ? { ...t, text, done, time: Date.now() }
+          : t
+      );
+    }
+  }
+  return [
+    ...transcript,
+    {
+      id: crypto.randomUUID(),
+      kind: "tutor_message",
+      role,
+      text,
+      messageId,
+      done,
+      time: Date.now()
+    }
+  ];
 }
 
 function upsertSubmitted(

@@ -1,7 +1,8 @@
-// Tutor Transcript（规格 26/27）：渲染已提交记录与（预留的）tutor 消息。
-// MVP 纯文本 + 换行渲染，不引入 markdown 库，先保证正确性。
+// Tutor Transcript（规格 26/27）：渲染已提交记录与 tutor 消息。
+// tutor 消息用 marked 渲染 markdown/code block（规格 20 的 Transcript 区域）。
 
-import { useEffect, useRef } from "react";
+import { marked } from "marked";
+import { useEffect, useMemo, useRef } from "react";
 
 import { useLearningWorkspace } from "../state/store";
 import type { TranscriptEntry } from "../state/store";
@@ -45,8 +46,16 @@ function TranscriptItem({ entry }: { entry: TranscriptEntry }): React.JSX.Elemen
   if (entry.kind === "tutor_message") {
     return (
       <div className="entry entry-tutor">
-        <div className="entry-head">{entry.role === "user" ? "你" : "Tutor"}</div>
-        <div className="entry-text">{entry.text}</div>
+        <div className="entry-head">
+          {entry.role === "user" ? "你" : "Tutor"}
+          {entry.done === false && <span className="streaming-dot" />}
+        </div>
+        {/* XSS 风险：内容来自本地 Tutor 模型输出（学习场景），未消毒直接渲染。
+            若未来引入外部/用户输入来源，先接 DOMPurify 再落 dangerouslySetInnerHTML。 */}
+        <div
+          className="entry-text"
+          dangerouslySetInnerHTML={{ __html: useTutorMarkdown(entry.text ?? "") }}
+        />
       </div>
     );
   }
@@ -55,4 +64,9 @@ function TranscriptItem({ entry }: { entry: TranscriptEntry }): React.JSX.Elemen
       <span className="pill">{entry.status}</span>
     </div>
   );
+}
+
+/** 流式时每次 text 变化都会重新 parse（MVP 接受；需优化时再做增量渲染）。 */
+function useTutorMarkdown(text: string): string {
+  return useMemo(() => marked.parse(text, { async: false }), [text]);
 }

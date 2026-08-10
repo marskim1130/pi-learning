@@ -139,8 +139,20 @@ export class LearningServer {
    * Broadcast the tutor's final visible assistant text (spec 26). Safe no-op
    * while not started / with no SSE clients: the hub simply has no receivers.
    */
-  broadcastTutorMessage(role: "assistant", text: string): void {
-    this.sseHub.broadcast({ event: "tutor.message", role, text });
+  broadcastTutorMessage(
+    role: "assistant",
+    text: string,
+    messageId: string | undefined,
+    done: boolean
+  ): void {
+    // messageId undefined 时不带该字段（SSE JSON 兼容旧客户端）。
+    this.sseHub.broadcast({
+      event: "tutor.message",
+      role,
+      text,
+      ...(messageId === undefined ? {} : { messageId }),
+      done
+    });
   }
 
   /** Broadcast tutor waiting/idle status (spec 26). Safe no-op with no clients. */
