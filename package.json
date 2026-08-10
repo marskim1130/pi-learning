@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test",
+    "typecheck:web": "npm --prefix web run typecheck",
+    "build:web": "npm --prefix web run build",
+    "check": "npm run typecheck && npm run typecheck:web && npm test",
     "pi": "pi -e ./extension/index.ts"
   },
   "dependencies": {

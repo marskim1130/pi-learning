@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { InteractionBroker } from "../extension/server/interaction-broker.js";
@@ -102,19 +105,83 @@ describe("LearningServer QA scenarios", () => {
     expect(Number(new URL(url ?? "").port)).toBeGreaterThan(0);
   });
 
-  it("rejects unknown paths with 404 (no filesystem service)", async () => {
-    const r1 = await fetch(`${origin}/assets/app.js`, { headers });
+  it("rejects unknown API paths with 404", async () => {
+    const r1 = await fetch(`${origin}/api/events/extra`, { headers });
     expect(r1.status).toBe(404);
-    const r2 = await fetch(`${origin}/api/events/extra`, { headers });
-    expect(r2.status).toBe(404);
-    const r3 = await fetch(`${origin}/api/interactions/q_skip/skip`, {
+    const r2 = await fetch(`${origin}/api/interactions/q_skip/skip`, {
       method: "POST",
       headers,
       body: "{}"
     });
+    expect(r2.status).toBe(404);
+    const r3 = await fetch(`${origin}/../package.json`, { headers });
     expect(r3.status).toBe(404);
-    const r4 = await fetch(`${origin}/../package.json`, { headers });
-    expect(r4.status).toBe(404);
+  });
+
+  it("serves the inline placeholder page when no dist build exists", async () => {
+    const noDist = new LearningServer({
+      broker,
+      state,
+      token: TOKEN,
+      staticRoot: path.join(tmpdir(), `pi-learning-qa-missing-${Date.now()}`)
+    });
+    await noDist.start();
+    try {
+      const response = await fetch(`${new URL(noDist.url() ?? "").origin}/`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("Pi Learning Session");
+    } finally {
+      await noDist.close();
+    }
+  });
+
+  it("serves dist files with correct content types and blocks path traversal", async () => {
+    const distRoot = mkdtempSync(path.join(tmpdir(), "pi-learning-qa-dist-"));
+    try {
+      mkdirSync(path.join(distRoot, "assets"), { recursive: true });
+      writeFileSync(
+        path.join(distRoot, "index.html"),
+        "<!doctype html><title>fixture</title>"
+      );
+      writeFileSync(
+        path.join(distRoot, "assets", "app.js"),
+        "console.log('fixture');"
+      );
+      const staticServer = new LearningServer({
+        broker,
+        state,
+        token: TOKEN,
+        staticRoot: distRoot
+      });
+      await staticServer.start();
+      const staticOrigin = new URL(staticServer.url() ?? "").origin;
+      try {
+        const index = await fetch(`${staticOrigin}/`);
+        expect(index.status).toBe(200);
+        expect(index.headers.get("content-type")).toContain("text/html");
+        expect(await index.text()).toContain("fixture");
+
+        const js = await fetch(`${staticOrigin}/assets/app.js`);
+        expect(js.status).toBe(200);
+        expect(js.headers.get("content-type")).toContain("javascript");
+        expect(await js.text()).toBe("console.log('fixture');");
+
+        const missing = await fetch(`${staticOrigin}/assets/nope.js`);
+        expect(missing.status).toBe(404);
+
+        // Path traversal attempts must never escape the dist root.
+        const traversal1 = await fetch(`${staticOrigin}/../package.json`);
+        expect(traversal1.status).toBe(404);
+        const traversal2 = await fetch(`${staticOrigin}/%2e%2e/package.json`);
+        expect(traversal2.status).toBe(404);
+        const traversal3 = await fetch(`${staticOrigin}/..%2fpackage.json`);
+        expect(traversal3.status).toBe(404);
+      } finally {
+        await staticServer.close();
+      }
+    } finally {
+      rmSync(distRoot, { recursive: true, force: true });
+    }
   });
 
   it("delivers one presented broadcast to two concurrent SSE clients", async () => {

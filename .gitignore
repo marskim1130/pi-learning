@@ -2,3 +2,7 @@ node_modules/
 coverage/
 *.log
 .pi/
+
+# web frontend build artifacts & deps
+web/dist/
+web/node_modules/

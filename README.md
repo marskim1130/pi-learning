@@ -1,8 +1,8 @@
 # Pi Learning Agent
 
-Pi Learning Agent 是一个面向 `@earendil-works/pi-coding-agent` 的结构化学习扩展。当前版本实现规格说明书第 44 节定义的首个交付：Interaction Broker、三个 Learning Tool、Learning Mode prompt、学习命令，以及纯 Pi TUI fallback。
+Pi Learning Agent 是一个面向 `@earendil-works/pi-coding-agent` 的结构化学习扩展。当前实现：Interaction Broker、三个 Learning Tool、Learning Mode prompt、学习命令、TUI fallback，以及本地 HTTP/SSE 学习服务器与浏览器 Web Learning Workspace（规格 9/20-27）。
 
-当前版本不会执行学习者提交的代码，也不会启动 HTTP 服务。
+当前版本不会执行学习者提交的代码（代码只提交给模型评阅，没有 runner）。
 
 ## 环境要求
 
@@ -78,6 +78,29 @@ npm run pi
 
 三个 Tool 都使用 `executionMode: "sequential"`，避免并行 TUI 对话框互相覆盖。
 
+## Web Workspace
+
+浏览器端学习工作台位于 `web/`（Vite + React + TypeScript）。构建前端产物：
+
+```powershell
+npm run build:web
+```
+
+启动 Pi 并进入学习模式：
+
+```powershell
+npm run pi
+/learn rust generics
+```
+
+`/learn` 或 `/learn-open` 会显示带 token 的 workspace URL（形如 `http://127.0.0.1:<port>/?token=...`），用浏览器打开即进入工作台。Pi 调用 `learning_ask_*` 时，结构化组件（单选 / 自由回答 / Monaco 代码编辑器）出现在右侧 Active Panel；底部 ProgressPanel 显示概念掌握度；左侧 transcript 记录已提交的答案。
+
+没有构建产物（未运行 `npm run build:web`）时，`GET /` 回退到内置占位页，API 照常工作。
+
+**刷新恢复**：页面重新加载后自动执行 `GET /api/session` → `GET /api/interactions/pending` → 建立 SSE，pending 的题目立即重新渲染，不会让 Pi Tool 卡死。提交后即使 SSE 短暂断开，答案也已通过 POST 确认。
+
+**已知限制**：transcript 目前只记录提交记录与预留的 tutor 消息接口（Tutor 文本同步是下一步）；Markdown 未渲染（纯文本 + 换行）；Monaco 仅本地打包，Rust/Python 等只有语法高亮，无 Language Server；暂无 Web/TUI 自动切换（presenter 路由是下一步）。
+
 ## 架构
 
 ```text
@@ -95,11 +118,9 @@ Pi Extension entry
 ## 已知限制
 
 - 这是规格的 Milestone 0 + 1，不是完整 Web MVP。
-- 尚无 React、Monaco、HTTP、SSE 或 token auth。
+- 已有本地 HTTP/SSE 服务器（127.0.0.1 随机端口、token auth）与浏览器工作台（Web Workspace，见上节）。
 - 已支持 Pi session reload/resume/fork 时从当前 branch 的最后一个有效 `learning-state` entry 恢复；尚无跨 session 的长期 learner profile。
-- 尚无 MultiChoice、Tutor Transcript 或 mastery 更新。
-- `allowSkip` 已进入单选 interaction 协议，但本阶段没有定义结构化 skip answer，因此 TUI 不展示 Skip 选项。
+- 尚无 MultiChoice、Tutor Transcript 的 Tutor 文本同步或 mastery 更新。
+- `allowSkip` 已进入单选 interaction 协议，但本阶段没有定义结构化 skip answer，因此不展示 Skip 选项。
 - TUI 模式的代码/多行回答使用可响应 AbortSignal 的 `ctx.ui.custom()` 编辑器；非 TUI 模式仍受 Pi `ctx.ui.editor()` 不接受 AbortSignal 的限制。
 - `/learn` 的文档签名与课程/多词主题存在歧义；本阶段采用首词为课程、剩余文本为主题的规则，以满足 `rust generics` 验收场景。
-
-下一里程碑将加入 localhost-only HTTP/SSE server、token auth、浏览器连接检测和 SingleChoice Web 往返闭环。

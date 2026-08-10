@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pi 学习工作台</title>
+    <script>
+      // 从 URL query 读取会话 token 并存入 sessionStorage（spec 31）。
+      // 必须在应用脚本加载前执行，React 启动时统一从 sessionStorage 读取。
+      (function () {
+        var token = new URLSearchParams(window.location.search).get("token");
+        if (token) {
+          sessionStorage.setItem("pi_learning_token", token);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { InteractionBroker } from "../extension/server/interaction-broker.js";
@@ -162,12 +164,24 @@ describe("LearningServer HTTP API", () => {
     expect(await empty.json()).toEqual({ interactions: [] });
   });
 
-  it("serves the placeholder index page without a token", async () => {
-    const response = await fetch(`${origin}/`);
-    expect(response.status).toBe(200);
-    const html = await response.text();
-    expect(html).toContain("Pi Learning Session");
-    expect(html).toContain("Connected to Pi Learning Session");
+  it("serves the placeholder index page when no dist build exists", async () => {
+    const placeholderServer = new LearningServer({
+      broker,
+      state,
+      token: TOKEN,
+      // 与构建产物无关：显式指向不存在的目录，验证内联占位页回退。
+      staticRoot: path.join(tmpdir(), `pi-learning-missing-${Date.now()}`)
+    });
+    await placeholderServer.start();
+    try {
+      const response = await fetch(`${new URL(placeholderServer.url() ?? "").origin}/`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain("Pi Learning Session");
+      expect(html).toContain("Connected to Pi Learning Session");
+    } finally {
+      await placeholderServer.close();
+    }
   });
 
   it("returns 404 for unknown paths", async () => {

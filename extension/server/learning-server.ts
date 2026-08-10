@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import path from "node:path";
 
 import type { LearningStateStore } from "../state/learning-state.js";
 import type { InteractionBroker } from "./interaction-broker.js";
@@ -20,6 +22,11 @@ export interface LearningServerOptions {
   now?: () => number;
   /** Injectable for tests; defaults to a random 48-hex-char session token. */
   token?: string;
+  /**
+   * Root of the built web app (spec 9.2 GET / + assets). Defaults to
+   * <repo>/web/dist; injectable for tests.
+   */
+  staticRoot?: string;
 }
 
 /**
@@ -29,8 +36,9 @@ export interface LearningServerOptions {
  * Every /api/* route requires the session token (spec 31); /api/events also
  * accepts ?token= because EventSource cannot send headers.
  *
- * The server starts lazily via start() and owns no filesystem access: GET /
- * serves an inline placeholder page, everything else is JSON or SSE.
+ * The server starts lazily via start(). GET / serves the built web app from
+ * web/dist when present (path traversal guarded), otherwise a small inline
+ * placeholder page; everything else is JSON or SSE.
  */
 export class LearningServer {
   private readonly broker: InteractionBroker;
@@ -38,6 +46,7 @@ export class LearningServer {
   private readonly token: string;
   private readonly now: () => number;
   private readonly sseHub = new SseHub();
+  private readonly staticRoot: string;
   private server: Server | undefined;
   private startPromise: Promise<void> | undefined;
 
@@ -46,6 +55,8 @@ export class LearningServer {
     this.state = options.state;
     this.token = options.token ?? randomBytes(24).toString("hex");
     this.now = options.now ?? Date.now;
+    this.staticRoot =
+      options.staticRoot ?? path.resolve(import.meta.dirname, "../../web/dist");
     this.broker.subscribe({
       onPresented: (interaction) =>
         this.sseHub.broadcast({ event: "interaction.presented", interaction }),
@@ -149,11 +160,15 @@ export class LearningServer {
     const method = request.method ?? "GET";
 
     if (method === "GET" && pathname === "/") {
-      sendIndex(response);
+      await this.serveStatic(response, "/");
       return;
     }
 
     if (!pathname.startsWith("/api/")) {
+      if (method === "GET") {
+        await this.serveStatic(response, pathname);
+        return;
+      }
       sendJson(response, 404, { ok: false, message: "Not found." });
       return;
     }
@@ -191,6 +206,50 @@ export class LearningServer {
     }
 
     sendJson(response, 404, { ok: false, message: "Not found." });
+  }
+
+  /**
+   * Serve a file from the built web app root (spec 9.2). Paths are resolved
+   * against staticRoot and must stay inside it (blocks ../ and encoded
+   * traversal); GET / defaults to index.html and falls back to the inline
+   * placeholder page when no build exists (spec 33: frontend bundle missing).
+   */
+  private async serveStatic(response: ServerResponse, pathname: string): Promise<void> {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(pathname);
+    } catch {
+      sendJson(response, 404, { ok: false, message: "Not found." });
+      return;
+    }
+    const relative = decoded === "/" ? "index.html" : decoded.replace(/^\/+/u, "");
+    const resolved = path.resolve(this.staticRoot, relative);
+    if (resolved !== this.staticRoot && !resolved.startsWith(this.staticRoot + path.sep)) {
+      // Resolved outside the dist root: path traversal attempt.
+      sendJson(response, 404, { ok: false, message: "Not found." });
+      return;
+    }
+
+    let content: Buffer;
+    try {
+      content = await readFile(resolved);
+    } catch {
+      if (decoded === "/") {
+        sendIndex(response);
+        return;
+      }
+      sendJson(response, 404, { ok: false, message: "Not found." });
+      return;
+    }
+
+    const contentType =
+      CONTENT_TYPES[path.extname(resolved).toLowerCase()] ??
+      "application/octet-stream";
+    response.writeHead(200, {
+      "Content-Type": contentType,
+      "Content-Length": content.length
+    });
+    response.end(content);
   }
 
   private isAuthorized(request: IncomingMessage, allowQueryToken: boolean): boolean {
@@ -368,10 +427,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Minimal content-type map for the built web app assets. */
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".map": "application/json; charset=utf-8",
+  ".woff2": "font/woff2",
+  ".ico": "image/x-icon",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png"
+};
+
 /**
- * Minimal placeholder page (spec 9.2 GET /). Reads the token from the URL,
- * keeps it in sessionStorage, then verifies /api/health. The real React app
- * replaces this in the next milestone; no filesystem service here.
+ * Minimal placeholder page (spec 9.2 GET /), used only when no built web app
+ * is present. Reads the token from the URL, keeps it in sessionStorage, then
+ * verifies /api/health. The real React app (web/dist) replaces this after
+ * `npm run build:web`.
  */
 const INDEX_HTML = `<!doctype html>
 <html lang="en">
