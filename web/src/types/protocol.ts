@@ -113,6 +113,16 @@ export interface CodeExerciseAnswer {
   code: string;
 }
 
+/** 本地代码 runner 结果（规格 25；与 extension/server/protocol.ts 对齐）。 */
+export interface CodeRunResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  durationMs: number;
+  truncated: boolean;
+}
+
 export type LearningAnswer =
   | SingleChoiceAnswer
   | MultiChoiceAnswer

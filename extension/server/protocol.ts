@@ -189,3 +189,28 @@ export type LearningEvent =
   | LearningErrorEvent
   | TutorMessageEvent
   | TutorStatusEvent;
+
+// --- Code runner (spec 25) ---
+
+/**
+ * Local code-run request. Only the runner's language whitelist is accepted;
+ * the command template is defined by the program, never by the learner.
+ */
+export interface CodeRunRequest {
+  language: string;
+  code: string;
+  /** Optional override of the default 8s timeout (server clamps to 100..30000). */
+  timeoutMs?: number;
+}
+
+/** Result of a local code run; shown only to the learner, never a tool result. */
+export interface CodeRunResult {
+  /** null when the process was killed before exiting (timeout/abort). */
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  durationMs: number;
+  /** True when stdout/stderr hit the 64KB cap and were truncated. */
+  truncated: boolean;
+}

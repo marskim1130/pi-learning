@@ -2,6 +2,7 @@
 // sessionStorage）读取；所有请求带 Authorization: Bearer。
 
 import type {
+  CodeRunResult,
   LearningInteraction,
   LearningSessionSnapshot,
   ResolvedAnswer
@@ -63,6 +64,20 @@ export function describeSubmitError(error: unknown): string {
   return "提交失败，请重试。";
 }
 
+/** 运行失败时给组件的用户可读文案。 */
+export function describeRunError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      return "会话已失效，请使用带 token 的链接重新打开工作台。";
+    }
+    if (error.status === 503) {
+      return "本机未安装该语言的运行环境（python / node）。";
+    }
+    return error.message;
+  }
+  return "运行失败，请重试。";
+}
+
 export const client = {
   async health(): Promise<boolean> {
     const body = await request<{ ok: boolean }>("/api/health");
@@ -96,5 +111,18 @@ export const client = {
         })
       }
     );
+  },
+
+  /** 规格 25：本地自测运行，结果只回给学习者，不提交答案。 */
+  async runCode(language: string, code: string): Promise<CodeRunResult> {
+    const body = await request<{ ok: true; result: CodeRunResult }>(
+      "/api/code/run",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language, code })
+      }
+    );
+    return body.result;
   }
 };

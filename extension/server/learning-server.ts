@@ -5,6 +5,12 @@ import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import path from "node:path";
 
 import type { LearningStateStore } from "../state/learning-state.js";
+import {
+  CodeRunUnavailableError,
+  isSupportedLanguage,
+  LocalCodeRunner
+} from "../runner/code-runner.js";
+import type { CodeRunner } from "../runner/code-runner.js";
 import type { InteractionBroker } from "./interaction-broker.js";
 import type {
   InteractionSubmission,
@@ -15,6 +21,11 @@ import { SseHub } from "./sse-hub.js";
 
 const HOST = "127.0.0.1";
 const MAX_BODY_BYTES = 256 * 1024;
+const MAX_CODE_BYTES = 100 * 1024;
+
+/** 规格 25：/api/code/run 的 timeoutMs 取值范围。 */
+const MIN_TIMEOUT_MS = 100;
+const MAX_TIMEOUT_MS = 30_000;
 
 export interface LearningServerOptions {
   broker: InteractionBroker;
@@ -27,6 +38,11 @@ export interface LearningServerOptions {
    * <repo>/web/dist; injectable for tests.
    */
   staticRoot?: string;
+  /**
+   * Code runner for POST /api/code/run (spec 25). Defaults to a
+   * LocalCodeRunner; injectable for tests (stub runner).
+   */
+  runner?: CodeRunner;
 }
 
 /**
@@ -47,6 +63,7 @@ export class LearningServer {
   private readonly now: () => number;
   private readonly sseHub = new SseHub();
   private readonly staticRoot: string;
+  private readonly runner: CodeRunner;
   private server: Server | undefined;
   private startPromise: Promise<void> | undefined;
 
@@ -57,6 +74,7 @@ export class LearningServer {
     this.now = options.now ?? Date.now;
     this.staticRoot =
       options.staticRoot ?? path.resolve(import.meta.dirname, "../../web/dist");
+    this.runner = options.runner ?? new LocalCodeRunner();
     this.broker.subscribe({
       onPresented: (interaction) =>
         this.sseHub.broadcast({ event: "interaction.presented", interaction }),
@@ -245,6 +263,15 @@ export class LearningServer {
       return;
     }
 
+    // 规格 25：本地代码 runner。这个端点会执行任意学习者代码——它只在
+    // 127.0.0.1 + token 保护下可用（规格 31），且跑在临时目录 + env 白名单 +
+    // 超时 + 输出截断的边界内（LocalCodeRunner）。结果只回给学习者自测，
+    // 不进入 tool result（learning_ask_code 的“只提交不运行”契约不变）。
+    if (method === "POST" && pathname === "/api/code/run") {
+      await this.handleCodeRun(request, response);
+      return;
+    }
+
     sendJson(response, 404, { ok: false, message: "Not found." });
   }
 
@@ -410,6 +437,97 @@ export class LearningServer {
     }
 
     sendJson(response, 200, { ok: true, answer: result.answer });
+  }
+
+  /**
+   * POST /api/code/run (spec 25): run learner code locally for self-testing.
+   * Validation: language must be in the program-defined whitelist, code is a
+   * string ≤ 100KB, timeoutMs optional within [100, 30000] (default 8000).
+   * 503 when the runtime binary is missing; other failures bubble to the 500
+   * handler in handleRequest.
+   */
+  private async handleCodeRun(
+    request: IncomingMessage,
+    response: ServerResponse
+  ): Promise<void> {
+    let rawBody: string;
+    try {
+      rawBody = await readBody(request);
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        sendJson(response, 413, { ok: false, message: "Request body too large." });
+        return;
+      }
+      throw error;
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody) as unknown;
+    } catch {
+      sendJson(response, 400, {
+        ok: false,
+        message: "Request body must be valid JSON."
+      });
+      return;
+    }
+    if (!isRecord(body)) {
+      sendJson(response, 400, { ok: false, message: "Request body must be a JSON object." });
+      return;
+    }
+    if (typeof body.language !== "string" || !isSupportedLanguage(body.language)) {
+      sendJson(response, 400, {
+        ok: false,
+        message: `Unsupported language: ${String(body.language)}.`
+      });
+      return;
+    }
+    if (typeof body.code !== "string") {
+      sendJson(response, 400, { ok: false, message: "code must be a string." });
+      return;
+    }
+    if (Buffer.byteLength(body.code, "utf8") > MAX_CODE_BYTES) {
+      sendJson(response, 400, {
+        ok: false,
+        message: `code must be at most ${MAX_CODE_BYTES} bytes.`
+      });
+      return;
+    }
+    let timeoutMs = 8000;
+    if (body.timeoutMs !== undefined) {
+      if (
+        typeof body.timeoutMs !== "number" ||
+        !Number.isFinite(body.timeoutMs) ||
+        body.timeoutMs < MIN_TIMEOUT_MS ||
+        body.timeoutMs > MAX_TIMEOUT_MS
+      ) {
+        sendJson(response, 400, {
+          ok: false,
+          message: `timeoutMs must be a number between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}.`
+        });
+        return;
+      }
+      timeoutMs = body.timeoutMs;
+    }
+
+    try {
+      const result = await this.runner.run({
+        language: body.language,
+        code: body.code,
+        timeoutMs
+      });
+      sendJson(response, 200, { ok: true, result });
+    } catch (error) {
+      if (error instanceof CodeRunUnavailableError) {
+        sendJson(response, 503, {
+          ok: false,
+          reason: "runtime_unavailable",
+          message: error.message
+        });
+        return;
+      }
+      throw error;
+    }
   }
 }
 

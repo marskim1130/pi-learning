@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { InteractionBroker } from "../extension/server/interaction-broker.js";
 import { LearningServer } from "../extension/server/learning-server.js";
 import type { LearningInteraction } from "../extension/server/protocol.js";
+import {
+  CodeRunUnavailableError
+} from "../extension/runner/code-runner.js";
+import type { CodeRunner } from "../extension/runner/code-runner.js";
 import { LearningStateStore } from "../extension/state/learning-state.js";
 
 const TOKEN = "test-token";
@@ -474,5 +478,133 @@ describe("LearningServer HTTP API", () => {
   it("broadcastSessionUpdated is a safe no-op with no SSE clients", () => {
     const idleServer = new LearningServer({ broker, state, token: TOKEN });
     expect(() => idleServer.broadcastSessionUpdated()).not.toThrow();
+  });
+
+  // --- POST /api/code/run（规格 25）---
+
+  it("rejects /api/code/run without a token", async () => {
+    const response = await fetch(`${origin}/api/code/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: "node", code: "console.log(1)" })
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects /api/code/run with a language outside the whitelist", async () => {
+    const response = await fetch(`${origin}/api/code/run`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ language: "ruby", code: "puts 1" })
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ ok: false });
+  });
+
+  it("rejects /api/code/run with a non-string or oversized code", async () => {
+    const notAString = await fetch(`${origin}/api/code/run`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ language: "node", code: 42 })
+    });
+    expect(notAString.status).toBe(400);
+
+    const oversized = await fetch(`${origin}/api/code/run`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ language: "node", code: "x".repeat(100 * 1024 + 1) })
+    });
+    expect(oversized.status).toBe(400);
+  });
+
+  it("rejects /api/code/run with an out-of-range timeoutMs", async () => {
+    for (const timeoutMs of [0, 50, 60_000, "8000", null]) {
+      const response = await fetch(`${origin}/api/code/run`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ language: "node", code: "console.log(1)", timeoutMs })
+      });
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("runs node code end-to-end and returns the result", async () => {
+    const response = await fetch(`${origin}/api/code/run`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ language: "node", code: 'console.log("hi from run")' })
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      result: {
+        exitCode: 0,
+        stdout: "hi from run\n",
+        stderr: "",
+        timedOut: false,
+        truncated: false
+      }
+    });
+  });
+
+  it("returns 503 runtime_unavailable when the runner throws CodeRunUnavailableError", async () => {
+    const stubRunner: CodeRunner = {
+      run: async () => {
+        throw new CodeRunUnavailableError("node");
+      }
+    };
+    const unavailableServer = new LearningServer({
+      broker,
+      state,
+      token: TOKEN,
+      runner: stubRunner
+    });
+    await unavailableServer.start();
+    try {
+      const response = await fetch(
+        `${new URL(unavailableServer.url() ?? "").origin}/api/code/run`,
+        {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ language: "node", code: "console.log(1)" })
+        }
+      );
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        reason: "runtime_unavailable"
+      });
+    } finally {
+      await unavailableServer.close();
+    }
+  });
+
+  it("returns 500 when the runner fails unexpectedly", async () => {
+    const failingRunner: CodeRunner = {
+      run: async () => {
+        throw new Error("boom");
+      }
+    };
+    const failingServer = new LearningServer({
+      broker,
+      state,
+      token: TOKEN,
+      runner: failingRunner
+    });
+    await failingServer.start();
+    try {
+      const response = await fetch(
+        `${new URL(failingServer.url() ?? "").origin}/api/code/run`,
+        {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ language: "node", code: "console.log(1)" })
+        }
+      );
+      expect(response.status).toBe(500);
+      expect(await response.json()).toMatchObject({ ok: false });
+    } finally {
+      await failingServer.close();
+    }
   });
 });
