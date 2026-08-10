@@ -137,6 +137,35 @@ describe("LearningServer QA scenarios", () => {
     await readerB.close();
   });
 
+  it("broadcasts interaction.resolved exactly once per submit", async () => {
+    const pending = broker.present(singleChoiceInteraction("q_once"));
+    const sse = await fetch(
+      `${origin}/api/events?token=${TOKEN}`,
+      { headers: { Accept: "text/event-stream" } }
+    );
+    const reader = new SseReader(sse.body);
+
+    expect(broker.submit({
+      interactionId: "q_once",
+      answer: { optionId: "A" },
+      clientTimestamp: Date.now()
+    })).toMatchObject({ ok: true });
+    await pending;
+
+    const resolved = await reader.waitFor(
+      (d) => d.event === "interaction.resolved"
+    );
+    expect(resolved).toMatchObject({ interactionId: "q_once" });
+
+    // Give any duplicate broadcast a chance to arrive, then assert nothing else did.
+    await expect(
+      withTimeout(reader.nextFrame(), 300).then((frame) =>
+        frame.includes("interaction.resolved")
+      )
+    ).rejects.toThrow(/Timed out/);
+    await reader.close();
+  });
+
   it("drops a disconnected SSE client and reports no web client", async () => {
     const sse = await fetch(`${origin}/api/events`, { headers });
     expect(server.hasWebClient()).toBe(true);

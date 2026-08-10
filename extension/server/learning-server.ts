@@ -310,11 +310,6 @@ export class LearningServer {
       return;
     }
 
-    this.sseHub.broadcast({
-      event: "interaction.resolved",
-      interactionId,
-      answer: result.answer
-    });
     sendJson(response, 200, { ok: true, answer: result.answer });
   }
 }
