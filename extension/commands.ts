@@ -1,19 +1,28 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext
+} from "@earendil-works/pi-coding-agent";
 
 import type { InteractionBroker } from "./server/interaction-broker.js";
+import type { LearningServer } from "./server/learning-server.js";
 import type { LearningStateStore } from "./state/learning-state.js";
 import type { StartLearningInput } from "./state/learning-state.js";
+import { openWorkspace as defaultOpenWorkspace } from "./utils/browser.js";
 
 export interface LearningCommandDependencies {
   state: LearningStateStore;
   broker: InteractionBroker;
+  server: LearningServer;
+  /** Injectable for tests; defaults to the system browser opener. */
+  openWorkspace?: (url: string) => Promise<void>;
 }
 
 export function registerLearningCommands(
   pi: ExtensionAPI,
   dependencies: LearningCommandDependencies
 ): void {
-  const { state } = dependencies;
+  const { state, server } = dependencies;
+  const openWorkspace = dependencies.openWorkspace ?? defaultOpenWorkspace;
 
   pi.registerCommand("learn", {
     description: "Start a structured learning session: /learn <course> <topic>",
@@ -30,8 +39,11 @@ export function registerLearningCommands(
         `Learn: ${target.course.title} - ${target.topic.title}`
       );
       pi.appendEntry("learning-state", { version: 1, state: snapshot });
+      const workspaceUrl = await ensureServerStarted(server, ctx);
+      const workspaceLine =
+        workspaceUrl === undefined ? "" : `\nWorkspace: ${workspaceUrl}`;
       ctx.ui.notify(
-        `Learning Mode enabled: ${target.course.title} / ${target.topic.title}`,
+        `Learning Mode enabled: ${target.course.title} / ${target.topic.title}${workspaceLine}`,
         "info"
       );
 
@@ -45,6 +57,18 @@ export function registerLearningCommands(
       } else {
         pi.sendUserMessage(kickoff, { deliverAs: "followUp" });
       }
+    }
+  });
+
+  pi.registerCommand("learn-open", {
+    description: "Open the learning workspace in a browser",
+    handler: async (_args, ctx) => {
+      const url = await ensureServerStarted(server, ctx);
+      if (url === undefined) {
+        return;
+      }
+      await openWorkspace(url);
+      ctx.ui.notify(`Learning workspace: ${url}`, "info");
     }
   });
 
@@ -101,6 +125,23 @@ export function parseLearningTarget(args: string): StartLearningInput | undefine
 
 function toId(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/gu, "-");
+}
+
+/** Start the workspace server (lazy) and return its URL, or undefined on failure. */
+async function ensureServerStarted(
+  server: LearningServer,
+  ctx: ExtensionCommandContext
+): Promise<string | undefined> {
+  try {
+    await server.start();
+    return server.url();
+  } catch (error) {
+    ctx.ui.notify(
+      `Learning workspace server failed to start: ${String(error)}`,
+      "warning"
+    );
+    return undefined;
+  }
 }
 
 function toTitle(value: string): string {

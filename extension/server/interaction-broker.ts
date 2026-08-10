@@ -6,6 +6,12 @@ import type {
 } from "./protocol.js";
 import { validateInteractionAnswer } from "../utils/validation.js";
 
+/** Optional observability hooks; default is no-op so existing behavior is unchanged. */
+export interface BrokerListeners {
+  onPresented?: (interaction: LearningInteraction) => void;
+  onResolved?: (answer: ResolvedAnswer) => void;
+}
+
 interface PendingInteraction {
   interaction: LearningInteraction;
   resolve: (answer: ResolvedAnswer) => void;
@@ -36,6 +42,16 @@ export class InteractionConflictError extends Error {
 export class InteractionBroker {
   private readonly pending = new Map<string, PendingInteraction>();
   private readonly resolvedIds = new Set<string>();
+  private listeners: BrokerListeners;
+
+  constructor(listeners: BrokerListeners = {}) {
+    this.listeners = listeners;
+  }
+
+  /** Attach additional listeners (used by LearningServer after construction). */
+  subscribe(listeners: BrokerListeners): void {
+    this.listeners = { ...this.listeners, ...listeners };
+  }
 
   present(
     interaction: LearningInteraction,
@@ -70,6 +86,7 @@ export class InteractionBroker {
 
       this.pending.set(interaction.id, { interaction, resolve, reject, cleanup });
       signal?.addEventListener("abort", onAbort, { once: true });
+      notifyListener(() => this.listeners.onPresented?.(interaction));
     });
   }
 
@@ -139,6 +156,7 @@ export class InteractionBroker {
     pending.cleanup();
     this.rememberResolved(submission.interactionId);
     pending.resolve(answer);
+    notifyListener(() => this.listeners.onResolved?.(answer));
     return { ok: true, answer };
   }
 
@@ -180,5 +198,14 @@ export class InteractionBroker {
     this.pending.delete(interactionId);
     pending.cleanup();
     pending.reject(error);
+  }
+}
+
+/** Listeners are observability hooks: a throwing listener must not break the broker. */
+function notifyListener(notify: () => void): void {
+  try {
+    notify();
+  } catch (error) {
+    console.error("InteractionBroker listener failed:", error);
   }
 }

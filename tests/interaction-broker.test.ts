@@ -275,4 +275,68 @@ describe("InteractionBroker", () => {
       message: "Interaction q_reuse_resolved has already been resolved."
     });
   });
+
+  it("notifies listeners when an interaction is presented and resolved", async () => {
+    const onPresented = vi.fn();
+    const onResolved = vi.fn();
+    const broker = new InteractionBroker({ onPresented, onResolved });
+    const interaction = {
+      id: "q_listener",
+      type: "single_choice" as const,
+      question: "Listener question",
+      options: [{ id: "A", label: "Answer" }],
+      allowSkip: false,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+
+    expect(onPresented).toHaveBeenCalledWith(interaction);
+    expect(onResolved).not.toHaveBeenCalled();
+
+    const result = broker.submit({
+      interactionId: interaction.id,
+      answer: { optionId: "A" },
+      clientTimestamp: 1_100
+    });
+
+    expect(result.ok).toBe(true);
+    expect(onResolved).toHaveBeenCalledTimes(1);
+    expect(onResolved.mock.calls[0]?.[0]).toMatchObject({
+      interactionId: "q_listener",
+      type: "single_choice",
+      answer: { optionId: "A" }
+    });
+    await expect(answerPromise).resolves.toMatchObject({
+      interactionId: "q_listener"
+    });
+  });
+
+  it("keeps a throwing listener from breaking the broker", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const broker = new InteractionBroker({
+      onPresented: () => {
+        throw new Error("listener boom");
+      }
+    });
+    const interaction = {
+      id: "q_listener_boom",
+      type: "single_choice" as const,
+      question: "Boom",
+      options: [{ id: "A", label: "Answer" }],
+      allowSkip: false,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+
+    expect(broker.getPending()).toEqual([interaction]);
+    const result = broker.submit({
+      interactionId: interaction.id,
+      answer: { optionId: "A" },
+      clientTimestamp: 1_100
+    });
+    expect(result.ok).toBe(true);
+    await expect(answerPromise).resolves.toMatchObject({
+      interactionId: "q_listener_boom"
+    });
+  });
 });

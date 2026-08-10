@@ -93,3 +93,50 @@ export type SubmitResult =
       reason: "not_found" | "already_resolved" | "invalid_answer";
       message: string;
     };
+
+// --- Server-sent events (spec 7.1) ---
+
+import type {
+  ConceptState,
+  LearningCourse,
+  LearningPhase,
+  LearningTopic
+} from "../state/types.js";
+
+/** Shape of GET /api/session and the session.updated SSE event. */
+export interface LearningSessionSnapshot {
+  learningMode: boolean;
+  course?: LearningCourse;
+  topic?: LearningTopic;
+  phase: LearningPhase;
+  /** Array in insertion order of the state's concept map. */
+  concepts: ConceptState[];
+}
+
+export interface InteractionPresentedEvent {
+  event: "interaction.presented";
+  interaction: LearningInteraction;
+}
+
+export interface InteractionResolvedEvent {
+  event: "interaction.resolved";
+  interactionId: string;
+  answer: ResolvedAnswer;
+}
+
+export interface SessionUpdatedEvent {
+  event: "session.updated";
+  session: LearningSessionSnapshot;
+}
+
+/** Corresponds to spec 7.1's ErrorEvent. */
+export interface LearningErrorEvent {
+  event: "error";
+  message: string;
+}
+
+export type LearningEvent =
+  | InteractionPresentedEvent
+  | InteractionResolvedEvent
+  | SessionUpdatedEvent
+  | LearningErrorEvent;
