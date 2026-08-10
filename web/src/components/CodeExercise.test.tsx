@@ -261,10 +261,9 @@ describe("CodeExercise", () => {
     ]);
   });
 
-  // 已知缺口（已报告，未修）：intersects 忽略零宽交集，折叠光标在只读区内
-  // 插入（打字/粘贴）不被拦截；只有非零宽（选区替换、Backspace/Delete）被拦截。
-  // 修复后此断言需翻转。
-  it("pins the gap: typing at a collapsed caret inside a read-only range passes", () => {
+  // 回归（缺陷已修）：intersects 把落在只读区内的零宽（折叠光标）编辑视为
+  // 相交，只读区内打字/粘贴被拦截；只读区末尾边界之外的零宽位置仍放行。
+  it("blocks typing at a collapsed caret inside a read-only range", () => {
     render(
       <CodeExercise
         interaction={interaction({
@@ -277,8 +276,24 @@ describe("CodeExercise", () => {
     fake.model.pushEditOperations(null, [
       { range: new fake.Range(1, 3, 1, 3), text: "X" }
     ]);
+    expect(fake.applyEdits).toHaveBeenLastCalledWith([]);
+  });
+
+  it("allows typing at a collapsed caret just after a read-only range", () => {
+    render(
+      <CodeExercise
+        interaction={interaction({
+          starterCode: "abcdefgh",
+          readOnlyRanges: [{ start: 0, end: 7 }]
+        })}
+      />
+    );
+
+    fake.model.pushEditOperations(null, [
+      { range: new fake.Range(1, 9, 1, 9), text: "X" }
+    ]);
     expect(fake.applyEdits).toHaveBeenLastCalledWith([
-      { range: new fake.Range(1, 3, 1, 3), text: "X" }
+      { range: new fake.Range(1, 9, 1, 9), text: "X" }
     ]);
   });
 

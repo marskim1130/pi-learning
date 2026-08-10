@@ -87,10 +87,30 @@ export default function CodeExercise({
 
 function intersects(a: monaco.IRange, b: monaco.IRange): boolean {
   const isect = monaco.Range.intersectRanges(a, b);
-  return (
-    isect !== null &&
-    !(isect.startLineNumber === isect.endLineNumber && isect.startColumn === isect.endColumn)
-  );
+  if (isect === null) {
+    return false;
+  }
+  // 零宽交集：折叠光标/空选区。intersectRanges 对落在只读区内的
+  // 零宽 range 返回零宽结果，不能因此漏拦截（规格 7.8 局部只读）。
+  const zeroWidth =
+    isect.startLineNumber === isect.endLineNumber &&
+    isect.startColumn === isect.endColumn;
+  if (!zeroWidth) {
+    return true;
+  }
+  // 零宽时按位置判定：p 在 b 的 [start, end) 区间内（end 列 exclusive）
+  // 即视为相交；恰好位于只读区末尾边界之外的位置不拦。
+  const { startLineNumber: line, startColumn: column } = isect;
+  if (line < b.startLineNumber || line > b.endLineNumber) {
+    return false;
+  }
+  if (line === b.startLineNumber && column < b.startColumn) {
+    return false;
+  }
+  if (line === b.endLineNumber && column >= b.endColumn) {
+    return false;
+  }
+  return true;
 }
 
 type PushEditOperations = (
