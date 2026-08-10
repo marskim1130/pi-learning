@@ -40,6 +40,47 @@ describe("splitMathSegments", () => {
       { type: "text", content: "价格 $5 元" }
     ]);
   });
+
+  it("prefers block delimiters so a single $ inside $$ stays math", () => {
+    expect(splitMathSegments("$$a$b$$")).toEqual([
+      { type: "math", content: "a$b", block: true }
+    ]);
+  });
+
+  it("keeps interleaved block and inline math in original order", () => {
+    expect(splitMathSegments("前 $$a$$ 中 $b$ 后")).toEqual([
+      { type: "text", content: "前 " },
+      { type: "math", content: "a", block: true },
+      { type: "text", content: " 中 " },
+      { type: "math", content: "b", block: false },
+      { type: "text", content: " 后" }
+    ]);
+  });
+
+  it("keeps a lone dollar inside a code fence as plain text", () => {
+    expect(splitMathSegments("```js\nconst a = $5;\n```")).toEqual([
+      { type: "text", content: "```js\nconst a = $5;\n```" }
+    ]);
+  });
+
+  // 已知限制（MVP 接受，见 splitMathSegments 注释）：不做转义处理，同一文本里两个
+  // $ 就按行内公式切，即使它们位于代码块或 \$ 转义中。下面两个用例钉住当前行为，
+  // 若将来加转义/代码块感知，需翻转断言。
+  it("pins the code-fence mis-split when a fence contains two dollars", () => {
+    expect(splitMathSegments("```js\nconst a = $5;\nconst b = $6;\n```")).toEqual([
+      { type: "text", content: "```js\nconst a = " },
+      { type: "math", content: "5;\nconst b = ", block: false },
+      { type: "text", content: "6;\n```" }
+    ]);
+  });
+
+  it("pins the escaped-dollar mis-split (\\$ is not honored)", () => {
+    expect(splitMathSegments("价格 \\$5 与 \\$6")).toEqual([
+      { type: "text", content: "价格 \\" },
+      { type: "math", content: "5 与 \\", block: false },
+      { type: "text", content: "6" }
+    ]);
+  });
 });
 
 describe("renderSegments", () => {
@@ -57,6 +98,16 @@ describe("renderSegments", () => {
       splitMathSegments("$$\\frac{1}{2}$$")
     );
     expect(html).toContain("katex-display");
+  });
+
+  it("does not throw on invalid LaTeX with throwOnError:false", () => {
+    expect(() =>
+      renderSegments([{ type: "math", content: "\\frac{", block: false }])
+    ).not.toThrow();
+    const html = renderSegments([
+      { type: "math", content: "\\frac{", block: false }
+    ]);
+    expect(html).toContain("katex");
   });
 });
 

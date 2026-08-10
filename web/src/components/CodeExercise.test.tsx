@@ -127,6 +127,7 @@ beforeEach(() => {
   fake.applyEdits.mockClear();
   fake.pushEditOperations.mockClear();
   fake.addCommand.mockClear();
+  fake.editor.createDecorationsCollection.mockClear();
   fake.model.pushEditOperations = fake.pushEditOperations;
   submit.mockResolvedValue({
     ok: true,
@@ -220,6 +221,87 @@ describe("CodeExercise", () => {
     ]);
     expect(fake.applyEdits).toHaveBeenLastCalledWith([
       { range: new fake.Range(1, 9, 1, 9), text: "!" }
+    ]);
+  });
+
+  it("drops a selection crossing the read-only boundary", () => {
+    render(
+      <CodeExercise
+        interaction={interaction({
+          starterCode: "abcdefgh",
+          readOnlyRanges: [{ start: 0, end: 7 }]
+        })}
+      />
+    );
+
+    // 选区（1..9 列）横跨只读区（1..8 列），整体丢弃。
+    fake.model.pushEditOperations(null, [
+      { range: new fake.Range(1, 6, 1, 9), text: "Y" }
+    ]);
+    expect(fake.applyEdits).toHaveBeenLastCalledWith([]);
+  });
+
+  it("filters only the ops intersecting read-only ranges", () => {
+    render(
+      <CodeExercise
+        interaction={interaction({
+          starterCode: "abcdefgh",
+          readOnlyRanges: [{ start: 0, end: 7 }]
+        })}
+      />
+    );
+
+    // 一个操作在只读区内（被丢弃），另一个在外（放行）。
+    fake.model.pushEditOperations(null, [
+      { range: new fake.Range(1, 1, 1, 3), text: "replaced" },
+      { range: new fake.Range(1, 9, 1, 9), text: "!" }
+    ]);
+    expect(fake.applyEdits).toHaveBeenLastCalledWith([
+      { range: new fake.Range(1, 9, 1, 9), text: "!" }
+    ]);
+  });
+
+  // 已知缺口（已报告，未修）：intersects 忽略零宽交集，折叠光标在只读区内
+  // 插入（打字/粘贴）不被拦截；只有非零宽（选区替换、Backspace/Delete）被拦截。
+  // 修复后此断言需翻转。
+  it("pins the gap: typing at a collapsed caret inside a read-only range passes", () => {
+    render(
+      <CodeExercise
+        interaction={interaction({
+          starterCode: "abcdefgh",
+          readOnlyRanges: [{ start: 0, end: 7 }]
+        })}
+      />
+    );
+
+    fake.model.pushEditOperations(null, [
+      { range: new fake.Range(1, 3, 1, 3), text: "X" }
+    ]);
+    expect(fake.applyEdits).toHaveBeenLastCalledWith([
+      { range: new fake.Range(1, 3, 1, 3), text: "X" }
+    ]);
+  });
+
+  it("ignores invalid ranges (end <= start) without decorating", () => {
+    render(
+      <CodeExercise
+        interaction={interaction({
+          starterCode: "abcdefgh",
+          readOnlyRanges: [
+            { start: 5, end: 2 },
+            { start: 0, end: 0 }
+          ]
+        })}
+      />
+    );
+
+    expect(fake.editor.createDecorationsCollection).not.toHaveBeenCalled();
+    // 无效区间不安装拦截包装：pushEditOperations 仍是原始 mock。
+    fake.model.pushEditOperations(null, [
+      { range: new fake.Range(1, 2, 1, 2), text: "X" }
+    ]);
+    expect(fake.applyEdits).toHaveBeenLastCalledWith([
+      { range: new fake.Range(1, 2, 1, 2), text: "X" }
     ]);
   });
 });

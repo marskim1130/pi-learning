@@ -405,6 +405,43 @@ describe("learning tools", () => {
     );
   });
 
+  it("omits readOnlyRanges from the interaction when not provided", async () => {
+    const present = vi.fn().mockResolvedValue({
+      interactionId: "q_code_plain",
+      type: "code",
+      answer: { language: "python", code: "x = 1" },
+      responseTimeMs: 250
+    });
+    const ctx = { hasUI: false, ui: {} } as unknown as ExtensionContext;
+    const tool = createAskCodeTool({
+      createId: () => "q_code_plain",
+      now: () => 2_000,
+      present
+    });
+
+    await tool.execute(
+      "tool_call_code_plain",
+      { instructions: "Write a function.", language: "python" },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    const interaction = present.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(interaction).toEqual({
+      id: "q_code_plain",
+      type: "code",
+      instructions: "Write a function.",
+      language: "python",
+      starterCode: "",
+      createdAt: 2_000
+    });
+    // exactOptionalPropertyTypes：缺省时键不出现，而不是值为 undefined。
+    expect(Object.prototype.hasOwnProperty.call(interaction, "readOnlyRanges")).toBe(
+      false
+    );
+  });
+
   it("routes a TUI single-choice answer through the interaction broker", async () => {
     let resolveSelection: ((value: string) => void) | undefined;
     const select = vi.fn(
