@@ -50,11 +50,12 @@ describe("learning commands", () => {
     const state = new LearningStateStore();
     const server = createServerMock();
     const notify = vi.fn();
+    const openWorkspace = vi.fn();
     registerLearningCommands(pi, {
       state,
       broker: new InteractionBroker(),
       server: server as unknown as LearningServer,
-      openWorkspace: vi.fn()
+      openWorkspace
     });
     const ctx = {
       isIdle: () => true,
@@ -70,6 +71,7 @@ describe("learning commands", () => {
       phase: "diagnosing"
     });
     expect(server.start).toHaveBeenCalled();
+    expect(openWorkspace).toHaveBeenCalledWith(MOCK_WORKSPACE_URL);
     expect(notify).toHaveBeenCalledWith(
       expect.stringContaining(`Workspace: ${MOCK_WORKSPACE_URL}`),
       "info"

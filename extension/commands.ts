@@ -40,6 +40,9 @@ export function registerLearningCommands(
       );
       pi.appendEntry("learning-state", { version: 1, state: snapshot });
       const workspaceUrl = await ensureServerStarted(server, ctx);
+      if (workspaceUrl !== undefined) {
+        await openWorkspace(workspaceUrl);
+      }
       const workspaceLine =
         workspaceUrl === undefined ? "" : `\nWorkspace: ${workspaceUrl}`;
       ctx.ui.notify(
