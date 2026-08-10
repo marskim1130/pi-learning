@@ -272,4 +272,63 @@ describe("web workspace store SSE handling", () => {
     expect(state.transcript[0]?.done).toBe(true); // 兼容旧 server：视为最终帧
     expect(state.transcript[0]?.messageId).toBeUndefined();
   });
+
+  it("streaming merge preserves array position among sibling entries; stray frame after done:true stays in place", () => {
+    useLearningWorkspace.getState().connect();
+    const es = FakeEventSource.last();
+    expect(es).not.toBeNull();
+
+    // 已提交记录在前，流式 tutor 消息在中，另一条已提交记录在后。
+    const answer = resolvedFor(singleChoice("pos_1"));
+    es?.dispatch("interaction.resolved", { interactionId: "pos_1", answer });
+    es?.dispatch("tutor.message", {
+      role: "assistant",
+      text: "stream",
+      messageId: "m2",
+      done: false
+    });
+    const answer2 = resolvedFor(singleChoice("pos_2"));
+    es?.dispatch("interaction.resolved", { interactionId: "pos_2", answer: answer2 });
+
+    // 同 messageId 更新帧：长度不变、index 1 位置保留（map 原地替换）。
+    es?.dispatch("tutor.message", {
+      role: "assistant",
+      text: "streaming",
+      messageId: "m2",
+      done: false
+    });
+    let state = useLearningWorkspace.getState();
+    expect(state.transcript).toHaveLength(3);
+    expect(state.transcript.map((t) => t.kind)).toEqual([
+      "submitted",
+      "tutor_message",
+      "submitted"
+    ]);
+    expect(state.transcript[1]?.text).toBe("streaming");
+    const entryId = state.transcript[1]?.id;
+
+    // done:true 落定后，迟到的同 id 帧仍原地替换（不追加、不动位置）。
+    es?.dispatch("tutor.message", {
+      role: "assistant",
+      text: "streaming final",
+      messageId: "m2",
+      done: true
+    });
+    es?.dispatch("tutor.message", {
+      role: "assistant",
+      text: "late frame",
+      messageId: "m2",
+      done: false
+    });
+    state = useLearningWorkspace.getState();
+    expect(state.transcript).toHaveLength(3);
+    expect(state.transcript[1]?.id).toBe(entryId);
+    expect(state.transcript[1]?.text).toBe("late frame");
+    expect(state.transcript[1]?.done).toBe(false);
+    expect(state.transcript.map((t) => t.kind)).toEqual([
+      "submitted",
+      "tutor_message",
+      "submitted"
+    ]);
+  });
 });
