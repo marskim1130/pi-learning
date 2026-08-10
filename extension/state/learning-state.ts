@@ -1,10 +1,13 @@
 import type {
+  AttemptOutcome,
   AttemptSummary,
   ConceptState,
+  EvidenceType,
   LearningCourse,
   LearningState,
   LearningTopic,
-  LearningPhase
+  LearningPhase,
+  RecentOutcome
 } from "./types.js";
 
 export interface StartLearningInput {
@@ -12,13 +15,84 @@ export interface StartLearningInput {
   topic: LearningTopic;
 }
 
+export interface RecordAttemptInput {
+  interactionId: string;
+  conceptId: string;
+  outcome: AttemptOutcome;
+  evidenceType: EvidenceType;
+  misconception?: string;
+}
+
+export interface LearningStateStoreOptions {
+  /** Invoked after every state mutation (start/stop/recordAttempt) with the post-change snapshot. */
+  onChange?: (snapshot: LearningState) => void;
+}
+
+/** Initial mastery for a newly created concept (spec 16.1). */
+export const INITIAL_MASTERY = 0.2;
+
+/** Mastery gains per correct answer, by evidence form (spec 16.1). */
+const MASTERY_GAINS: Record<EvidenceType, number> = {
+  choice: 0.08,
+  free_response: 0.12,
+  code: 0.15
+};
+
+/**
+ * Mastery penalties (spec 16.1 defines only incorrect -0.08; partial is not
+ * defined there, so it gets the same -0.04 penalty used for "mostly right").
+ */
+const MASTERY_PENALTIES: Record<Exclude<AttemptOutcome, "correct">, number> = {
+  incorrect: 0.08,
+  partial: 0.04
+};
+
+/**
+ * Ceiling rule (spec 16.1): mastery may exceed 0.75 only after the most
+ * recent consecutive correct records include at least 2 distinct evidence
+ * forms — a single question type alone cannot reach "mastered".
+ */
+const MASTERY_CEILING = 0.75;
+const MAX_RECENT_ATTEMPTS = 20;
+const MAX_RECENT_OUTCOMES = 10;
+const MAX_MISCONCEPTIONS = 10;
+
+/**
+ * Pure mastery update (spec 16.1). `concept.recentOutcomes` is the recent
+ * history INCLUDING the attempt being recorded (newest first); callers must
+ * prepend the new outcome before calling.
+ */
+export function updateMastery(
+  concept: ConceptState,
+  attempt: { outcome: AttemptOutcome; evidenceType: EvidenceType }
+): number {
+  const delta =
+    attempt.outcome === "correct"
+      ? MASTERY_GAINS[attempt.evidenceType]
+      : -MASTERY_PENALTIES[attempt.outcome];
+  let mastery = round2(concept.mastery + delta);
+
+  if (attempt.outcome === "correct" && mastery > MASTERY_CEILING) {
+    if (!hasDiverseRecentCorrect(concept.recentOutcomes)) {
+      mastery = MASTERY_CEILING;
+    }
+  }
+
+  return clamp01(mastery);
+}
+
 export class LearningStateStore {
+  private readonly onChange: ((snapshot: LearningState) => void) | undefined;
   private state: LearningState = {
     enabled: false,
     phase: "idle",
     concepts: {},
     recentAttempts: []
   };
+
+  constructor(options: LearningStateStoreOptions = {}) {
+    this.onChange = options.onChange;
+  }
 
   snapshot(): LearningState {
     return structuredClone(this.state);
@@ -41,6 +115,7 @@ export class LearningStateStore {
       topic: { ...input.topic },
       phase: "diagnosing"
     };
+    this.notifyChange();
   }
 
   stop(): void {
@@ -49,7 +124,101 @@ export class LearningStateStore {
       enabled: false,
       phase: "idle"
     };
+    this.notifyChange();
   }
+
+  /**
+   * Record a tutor-evaluated attempt (spec 30): creates the concept at
+   * INITIAL_MASTERY when unknown, updates mastery via updateMastery, and
+   * prepends to recentAttempts/recentOutcomes (bounded).
+   */
+  recordAttempt(input: RecordAttemptInput): AttemptSummary {
+    const recordedAt = Date.now();
+    const existing = this.state.concepts[input.conceptId];
+    const concept: ConceptState =
+      existing === undefined
+        ? {
+            id: input.conceptId,
+            title: input.conceptId,
+            mastery: INITIAL_MASTERY,
+            attempts: 0,
+            correct: 0,
+            misconceptions: []
+          }
+        : { ...existing, misconceptions: [...existing.misconceptions] };
+
+    concept.attempts += 1;
+    if (input.outcome === "correct") {
+      concept.correct += 1;
+    }
+    if (
+      input.outcome === "incorrect" &&
+      input.misconception !== undefined &&
+      !concept.misconceptions.includes(input.misconception)
+    ) {
+      concept.misconceptions = [
+        input.misconception,
+        ...concept.misconceptions
+      ].slice(0, MAX_MISCONCEPTIONS);
+    }
+    concept.recentOutcomes = (
+      [
+        { outcome: input.outcome, evidenceType: input.evidenceType },
+        ...(concept.recentOutcomes ?? [])
+      ] as RecentOutcome[]
+    ).slice(0, MAX_RECENT_OUTCOMES);
+    concept.mastery = updateMastery(concept, input);
+    concept.lastPracticedAt = recordedAt;
+
+    this.state.concepts[input.conceptId] = concept;
+
+    const summary: AttemptSummary = {
+      interactionId: input.interactionId,
+      conceptId: input.conceptId,
+      outcome: input.outcome,
+      evidenceType: input.evidenceType,
+      ...(input.misconception === undefined
+        ? {}
+        : { misconception: input.misconception }),
+      recordedAt
+    };
+    this.state.recentAttempts = [summary, ...this.state.recentAttempts].slice(
+      0,
+      MAX_RECENT_ATTEMPTS
+    );
+
+    this.notifyChange();
+    return summary;
+  }
+
+  private notifyChange(): void {
+    this.onChange?.(this.snapshot());
+  }
+}
+
+/** True when the trailing run of correct records contains >= 2 evidence forms. */
+function hasDiverseRecentCorrect(
+  recentOutcomes: readonly RecentOutcome[] | undefined
+): boolean {
+  const seen = new Set<EvidenceType>();
+  for (const entry of recentOutcomes ?? []) {
+    if (entry.outcome !== "correct") {
+      break;
+    }
+    seen.add(entry.evidenceType);
+    if (seen.size >= 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
 }
 
 const phases: readonly LearningPhase[] = [
@@ -113,7 +282,25 @@ function isConceptState(value: unknown): value is ConceptState {
       (typeof value.lastPracticedAt === "number" &&
         Number.isFinite(value.lastPracticedAt))) &&
     Array.isArray(value.misconceptions) &&
-    value.misconceptions.every((item) => typeof item === "string")
+    value.misconceptions.every((item) => typeof item === "string") &&
+    (value.recentOutcomes === undefined ||
+      (Array.isArray(value.recentOutcomes) &&
+        value.recentOutcomes.every(isRecentOutcome)))
+  );
+}
+
+function isRecentOutcome(value: unknown): value is RecentOutcome {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.outcome === "correct" ||
+      value.outcome === "partial" ||
+      value.outcome === "incorrect") &&
+    (value.evidenceType === "choice" ||
+      value.evidenceType === "free_response" ||
+      value.evidenceType === "code")
   );
 }
 

@@ -434,4 +434,45 @@ describe("LearningServer HTTP API", () => {
     expect(server.hasWebClient()).toBe(true);
     await new SseReader(sse.body).close();
   });
+
+  it("broadcasts session.updated over SSE after state changes", async () => {
+    let liveServer: LearningServer;
+    const liveState = new LearningStateStore({
+      onChange: () => liveServer.broadcastSessionUpdated()
+    });
+    liveServer = new LearningServer({ broker, state: liveState, token: TOKEN });
+    await liveServer.start();
+    try {
+      const liveOrigin = new URL(liveServer.url() ?? "http://127.0.0.1").origin;
+      const sse = await fetch(`${liveOrigin}/api/events?token=${TOKEN}`);
+      const reader = new SseReader(sse.body);
+      await reader.waitFor((data) => data.event === "connected");
+
+      liveState.recordAttempt({
+        interactionId: "q_1",
+        conceptId: "generics",
+        outcome: "correct",
+        evidenceType: "choice"
+      });
+
+      const updated = await reader.waitFor(
+        (data) => data.event === "session.updated"
+      );
+      expect(updated).toMatchObject({
+        session: {
+          learningMode: false,
+          phase: "idle",
+          concepts: [{ id: "generics", mastery: 0.28, attempts: 1, correct: 1 }]
+        }
+      });
+      await reader.close();
+    } finally {
+      await liveServer.close();
+    }
+  });
+
+  it("broadcastSessionUpdated is a safe no-op with no SSE clients", () => {
+    const idleServer = new LearningServer({ broker, state, token: TOKEN });
+    expect(() => idleServer.broadcastSessionUpdated()).not.toThrow();
+  });
 });

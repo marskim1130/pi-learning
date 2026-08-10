@@ -16,6 +16,16 @@ export interface LearningTopic {
   title: string;
 }
 
+export type AttemptOutcome = "correct" | "partial" | "incorrect";
+
+export type EvidenceType = "choice" | "free_response" | "code";
+
+/** One recorded answer, newest first; drives the 0.75 ceiling rule (spec 16.1). */
+export interface RecentOutcome {
+  outcome: AttemptOutcome;
+  evidenceType: EvidenceType;
+}
+
 export interface ConceptState {
   id: string;
   title: string;
@@ -24,13 +34,18 @@ export interface ConceptState {
   correct: number;
   lastPracticedAt?: number;
   misconceptions: string[];
+  /**
+   * Optional: absent in snapshots written before this field existed, so
+   * restore() must keep accepting concepts without it (backward compatible).
+   */
+  recentOutcomes?: RecentOutcome[];
 }
 
 export interface AttemptSummary {
   interactionId: string;
   conceptId: string;
-  outcome: "correct" | "partial" | "incorrect";
-  evidenceType: "choice" | "free_response" | "code";
+  outcome: AttemptOutcome;
+  evidenceType: EvidenceType;
   misconception?: string;
   recordedAt: number;
 }

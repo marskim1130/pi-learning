@@ -226,4 +226,46 @@ describe("learning commands", () => {
       "warning"
     );
   });
+
+  it("notifies onChange after /learn and /learn-stop with the new snapshot", async () => {
+    const commands = new Map<
+      string,
+      Omit<RegisteredCommand, "name" | "sourceInfo">
+    >();
+    const onChange = vi.fn();
+    const pi = {
+      registerCommand: (
+        name: string,
+        command: Omit<RegisteredCommand, "name" | "sourceInfo">
+      ) => commands.set(name, command),
+      sendUserMessage: vi.fn(),
+      setSessionName: vi.fn(),
+      appendEntry: vi.fn()
+    } as unknown as ExtensionAPI;
+    const state = new LearningStateStore({ onChange });
+    registerLearningCommands(pi, {
+      state,
+      broker: new InteractionBroker(),
+      server: createServerMock() as unknown as LearningServer,
+      openWorkspace: vi.fn()
+    });
+    const ctx = {
+      isIdle: () => true,
+      ui: { notify: vi.fn() }
+    } as unknown as ExtensionCommandContext;
+
+    await commands.get("learn")?.handler("rust generics", ctx);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0]?.[0]).toMatchObject({
+      enabled: true,
+      phase: "diagnosing"
+    });
+
+    await commands.get("learn-stop")?.handler("", ctx);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    expect(onChange.mock.calls[1]?.[0]).toMatchObject({
+      enabled: false,
+      phase: "idle"
+    });
+  });
 });

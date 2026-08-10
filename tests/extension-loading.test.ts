@@ -32,7 +32,8 @@ describe("Pi extension loading", () => {
         "learning_ask_code",
         "learning_ask_free_response",
         "learning_ask_multi_choice",
-        "learning_ask_single_choice"
+        "learning_ask_single_choice",
+        "learning_record_attempt"
       ]);
       expect([...extension!.commands.keys()].sort()).toEqual([
         "learn",

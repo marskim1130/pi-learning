@@ -152,6 +152,17 @@ export class LearningServer {
     );
   }
 
+  /**
+   * Broadcast the current learning state as session.updated (spec 16/30). Safe
+   * no-op while not started / with no SSE clients: the hub has no receivers.
+   */
+  broadcastSessionUpdated(): void {
+    this.sseHub.broadcast({
+      event: "session.updated",
+      session: this.sessionSnapshot()
+    });
+  }
+
   private async handleRequest(
     request: IncomingMessage,
     response: ServerResponse

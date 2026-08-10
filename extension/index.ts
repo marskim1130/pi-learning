@@ -10,11 +10,17 @@ import { registerTranscriptSync } from "./transcript-sync.js";
 import { registerTutorPrompt } from "./tutor-prompt.js";
 
 export default function learningExtension(pi: ExtensionAPI): void {
-  const state = new LearningStateStore();
   const broker = new InteractionBroker();
-  const server = new LearningServer({ broker, state });
+  // server 在 onChange 首次触发（/learn、record_attempt）前同步完成构造。
+  let server: LearningServer;
+  const state = new LearningStateStore({
+    // 任何 state 变化（/learn、/learn-stop、learning_record_attempt）后广播。
+    // server 可能未 start：broadcastSessionUpdated 在无 SSE 客户端时安全 no-op。
+    onChange: () => server.broadcastSessionUpdated()
+  });
+  server = new LearningServer({ broker, state });
 
-  registerLearningTools(pi, { broker, server });
+  registerLearningTools(pi, { broker, state, server });
   registerLearningCommands(pi, { state, broker, server });
   registerTutorPrompt(pi, { state });
   registerTranscriptSync(pi, server);
