@@ -96,4 +96,37 @@ describe("learning_record_attempt tool", () => {
     expect(result.details).toMatchObject({ newMastery: 0.16 });
     expect(state.snapshot().concepts["rust-ownership"]?.attempts).toBe(1);
   });
+
+  it("pi runtime rejects invalid outcome/evidenceType enums via the parameters schema", async () => {
+    // agent-loop validates tool calls with pi-ai validateToolArguments before
+    // execute() — the same path the LLM's calls go through. execute() itself
+    // does not validate, so this is the real guard.
+    const { validateToolArguments } = await import("@earendil-works/pi-ai");
+    const state = new LearningStateStore();
+    const tool = createAskRecordAttemptTool({ state });
+    const runtimeTool = {
+      name: "learning_record_attempt",
+      description: tool.description,
+      parameters: tool.parameters
+    } as Parameters<typeof validateToolArguments>[0];
+    const call = (arguments_: unknown): Parameters<typeof validateToolArguments>[1] => ({
+      type: "toolCall" as const,
+      id: "call_1",
+      name: "learning_record_attempt",
+      arguments: arguments_ as Record<string, unknown>
+    });
+
+    expect(
+      validateToolArguments(runtimeTool, call({ interactionId: "q", conceptId: "c", outcome: "correct", evidenceType: "choice" }))
+    ).toEqual({ interactionId: "q", conceptId: "c", outcome: "correct", evidenceType: "choice" });
+
+    for (const bad of [
+      { interactionId: "q", conceptId: "c", outcome: "banana", evidenceType: "choice" },
+      { interactionId: "q", conceptId: "c", outcome: "correct", evidenceType: "drag_drop" },
+      { interactionId: "q", conceptId: "c", outcome: "correct", evidenceType: "code", misconception: "" },
+      { interactionId: "", conceptId: "c", outcome: "correct", evidenceType: "choice" }
+    ]) {
+      expect(() => validateToolArguments(runtimeTool, call(bad))).toThrow();
+    }
+  });
 });

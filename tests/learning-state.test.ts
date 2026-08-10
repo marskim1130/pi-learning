@@ -180,6 +180,23 @@ describe("updateMastery (spec 16.1)", () => {
     record("correct", "choice");
     expect(mastery).toBe(0.75);
   });
+
+  it("a partial answer also breaks the correct streak (only correct counts)", () => {
+    let mastery = INITIAL_MASTERY;
+    let recent: NonNullable<ConceptState["recentOutcomes"]> = [];
+    const record = (outcome: "correct" | "partial", evidenceType: "choice" | "free_response") => {
+      recent = [{ outcome, evidenceType }, ...recent].slice(0, 10);
+      mastery = updateMastery(concept({ mastery, recentOutcomes: recent }), {
+        outcome,
+        evidenceType
+      });
+    };
+    for (let i = 0; i < 7; i += 1) record("correct", "choice");
+    record("correct", "free_response"); // 0.87, streak unlocked
+    record("partial", "choice"); // 0.83, streak now [partial]
+    record("correct", "choice"); // 0.91 would-be -> streak [choice] only -> 0.75
+    expect(mastery).toBe(0.75);
+  });
 });
 
 describe("LearningStateStore.recordAttempt", () => {
@@ -284,6 +301,42 @@ describe("LearningStateStore.recordAttempt", () => {
 
     expect(store.restore(oldSnapshot)).toBe(true);
     expect(store.snapshot().concepts.generics?.recentOutcomes).toBeUndefined();
+  });
+
+  it("recordAttempt after restoring an old snapshot (no recentOutcomes) keeps state valid", () => {
+    const store = new LearningStateStore();
+    store.restore({
+      enabled: false,
+      phase: "idle" as const,
+      concepts: {
+        c: {
+          id: "c",
+          title: "C",
+          mastery: 0.6,
+          attempts: 5,
+          correct: 4,
+          misconceptions: []
+        }
+      },
+      recentAttempts: []
+    });
+
+    const summary = store.recordAttempt({
+      interactionId: "q_1",
+      conceptId: "c",
+      outcome: "correct",
+      evidenceType: "choice"
+    });
+
+    const snapshot = store.snapshot();
+    expect(summary).toBeDefined();
+    expect(snapshot.concepts.c).toMatchObject({
+      mastery: 0.68,
+      attempts: 6,
+      correct: 5,
+      recentOutcomes: [{ outcome: "correct", evidenceType: "choice" }]
+    });
+    expect(snapshot.recentAttempts[0]?.interactionId).toBe("q_1");
   });
 
   it("restores snapshots with recentOutcomes and rejects invalid ones", () => {
