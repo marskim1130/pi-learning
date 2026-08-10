@@ -247,6 +247,50 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
     expect(broker.getPending()).toEqual([]);
   });
 
+  it("web branch passes the tool abort signal through: pre-aborted signal rejects immediately", async () => {
+    const broker = new InteractionBroker();
+    const presenter = createModeAwarePresenter(broker, () => true);
+    const signal = AbortSignal.abort();
+
+    await expect(
+      presenter.presentSingleChoice(singleChoice("web_aborted"), signal, {
+        hasUI: true,
+        ui: { select: vi.fn() }
+      } as unknown as ExtensionContext)
+    ).rejects.toThrow(/aborted/iu);
+    expect(broker.getPending()).toEqual([]);
+  });
+
+  it("web branch covers free response broker-only (ctx.ui untouched, submit resolves)", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(5_100);
+    const broker = new InteractionBroker();
+    const input = vi.fn();
+    const ctx = { hasUI: true, ui: { input } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => true);
+    const interaction = {
+      id: "web_free_response",
+      type: "free_response" as const,
+      question: "Explain generics.",
+      multiline: true,
+      createdAt: 5_000
+    };
+
+    const answerPromise = presenter.presentFreeResponse(interaction, undefined, ctx);
+    expect(input).not.toHaveBeenCalled();
+    expect(broker.getPending()).toEqual([interaction]);
+
+    const submitted = broker.submit({
+      interactionId: interaction.id,
+      answer: { text: "Type params." },
+      clientTimestamp: 5_100
+    });
+    expect(submitted.ok).toBe(true);
+
+    const answer = await answerPromise;
+    expect(answer.answer).toEqual({ text: "Type params." });
+    expect(broker.getPending()).toEqual([]);
+  });
+
   it("falls back to the TUI select when no web client is connected", async () => {
     const broker = new InteractionBroker();
     const select = vi.fn().mockResolvedValue("2. Second");
