@@ -26,6 +26,10 @@ export interface ConceptState {
   correct: number;
   lastPracticedAt?: number;
   misconceptions: string[];
+  recentOutcomes?: Array<{
+    outcome: "correct" | "partial" | "incorrect";
+    evidenceType: "choice" | "free_response" | "code";
+  }>;
 }
 
 /** Shape of GET /api/session 与 session.updated SSE 事件。 */
