@@ -54,6 +54,7 @@ describe("tutor prompt", () => {
     expect(systemPrompt).toContain("learning_ask_multi_choice");
     expect(systemPrompt).toContain("learning_ask_free_response");
     expect(systemPrompt).toContain("learning_ask_code");
+    expect(systemPrompt).toContain("self-contained");
     expect(systemPrompt).toContain("one primary learner interaction at a time");
     expect(systemPrompt).toContain("Current course: Rust");
     expect(systemPrompt).toContain("Current topic: Generics");

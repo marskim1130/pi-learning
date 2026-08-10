@@ -48,6 +48,15 @@ beforeEach(() => {
 });
 
 describe("SingleChoice", () => {
+  it("shows the model-provided title when present", () => {
+    render(
+      <SingleChoice interaction={{ ...interaction, title: "诊断：字符串相等性比较" }} />
+    );
+    expect(
+      screen.getByRole("heading", { name: "诊断：字符串相等性比较" })
+    ).toBeTruthy();
+  });
+
   it("renders options; clicking selects without submitting", () => {
     render(<SingleChoice interaction={interaction} />);
 

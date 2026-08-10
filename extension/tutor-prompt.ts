@@ -31,6 +31,7 @@ export function registerTutorPrompt(
       "9. Adapt difficulty to the learner state and do not infer mastery from one lucky choice.",
       "10. Keep explanations concise enough to preserve active participation.",
       "11. When a registered learning interaction tool fits, use it instead of ordinary chat input.",
+      "12. Make every learning_ask_* prompt self-contained: put all code, examples, and context inside the question/instructions parameter itself. The learner's active panel shows only that parameter's content, never your previous chat messages — a question without its code is unanswerable.",
       "",
       `Current course: ${state.course?.title ?? "unspecified"}`,
       `Current topic: ${state.topic?.title ?? "unspecified"}`,

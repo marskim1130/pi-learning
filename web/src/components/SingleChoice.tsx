@@ -61,7 +61,7 @@ export default function SingleChoice({
 
   return (
     <form className="interaction" onSubmit={handleSubmit}>
-      <h2 className="interaction-title">单选题</h2>
+      <h2 className="interaction-title">{interaction.title ?? "单选题"}</h2>
       <MathText text={interaction.question} className="interaction-question" />
       <fieldset
         className="options"

@@ -79,7 +79,7 @@ export default function MultiChoice({
 
   return (
     <form className="interaction" onSubmit={handleSubmit}>
-      <h2 className="interaction-title">多选题</h2>
+      <h2 className="interaction-title">{interaction.title ?? "多选题"}</h2>
       <MathText text={interaction.question} className="interaction-question" />
       <p className="muted multi-choice-hint">可能有多个正确答案，请选择所有正确的选项。</p>
       <fieldset
