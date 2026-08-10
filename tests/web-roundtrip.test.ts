@@ -26,6 +26,21 @@ function singleChoiceInteraction(id: string): LearningInteraction {
   };
 }
 
+function multiChoiceInteraction(id: string): LearningInteraction {
+  return {
+    id,
+    type: "multi_choice",
+    question: `Question ${id}`,
+    options: [
+      { id: "A", label: "First" },
+      { id: "B", label: "Second" },
+      { id: "C", label: "Third" }
+    ],
+    allowSkip: false,
+    createdAt: Date.now()
+  };
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timed out after ${ms} ms.`)), ms);
@@ -158,6 +173,74 @@ describe("Web workspace round trip", () => {
         body: JSON.stringify({
           interactionId: interaction.id,
           answer: { optionId: "A" },
+          clientTimestamp: Date.now()
+        })
+      }
+    );
+    expect(duplicateRes.status).toBe(409);
+
+    await presentation;
+    await sse.close();
+  });
+
+  it("completes a multi_choice round trip with ordered optionIds and duplicate-submit 409 (spec 7.6/22)", async () => {
+    const response = await fetch(`${origin}/api/events?token=${TOKEN}`, { headers });
+    expect(response.status).toBe(200);
+    const sse = new SseReader(response.body);
+
+    // present → SSE presented，wire 形状与前端 protocol.ts 一致。
+    const interaction = multiChoiceInteraction("web_rt_multi_1");
+    const presentedPromise = sse.waitFor(
+      (d) => d.event === "interaction.presented" && (d.interaction as { id?: string }).id === interaction.id
+    );
+    const presentation = broker.present(interaction);
+    const presented = await presentedPromise;
+    const wire = presented.interaction as Record<string, unknown>;
+    expect(wire.type).toBe("multi_choice");
+    expect(wire.allowSkip).toBe(false);
+    expect((wire.options as Array<{ id: string }>).map((o) => o.id)).toEqual(["A", "B", "C"]);
+
+    // 提交顺序保持原样（规格 22：顺序不应影响语义，服务端不去重排序）。
+    const resolvedPromise = sse.waitFor(
+      (d) => d.event === "interaction.resolved" && d.interactionId === interaction.id
+    );
+    const submitRes = await fetch(
+      `${origin}/api/interactions/${interaction.id}/submit`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          interactionId: interaction.id,
+          answer: { optionIds: ["C", "A"] },
+          clientTimestamp: Date.now()
+        })
+      }
+    );
+    expect(submitRes.status).toBe(200);
+    const submitBody = (await submitRes.json()) as {
+      ok: boolean;
+      answer: { type: string; answer: { optionIds: string[] } };
+    };
+    expect(submitBody.ok).toBe(true);
+    expect(submitBody.answer.type).toBe("multi_choice");
+    expect(submitBody.answer.answer.optionIds).toEqual(["C", "A"]);
+
+    const resolved = await resolvedPromise;
+    expect(
+      (resolved.answer as { answer: { optionIds: string[] } }).answer.optionIds
+    ).toEqual(["C", "A"]);
+
+    // pending 清空，重复提交 409。
+    const emptyRes = await fetch(`${origin}/api/interactions/pending`, { headers });
+    expect(((await emptyRes.json()) as { interactions: unknown[] }).interactions).toEqual([]);
+    const duplicateRes = await fetch(
+      `${origin}/api/interactions/${interaction.id}/submit`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          interactionId: interaction.id,
+          answer: { optionIds: ["A"] },
           clientTimestamp: Date.now()
         })
       }

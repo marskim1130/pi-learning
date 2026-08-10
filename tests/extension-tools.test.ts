@@ -203,6 +203,48 @@ describe("learning tools", () => {
     expect(result.details.responseTimeMs).toBe(250);
   });
 
+  it("does not submit an empty multi-choice when done is picked with nothing selected", async () => {
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("✔ 完成")
+      .mockResolvedValueOnce("1. First")
+      .mockResolvedValueOnce("✔ 完成");
+    const notify = vi.fn();
+    const ctx = {
+      hasUI: true,
+      ui: { select, notify }
+    } as unknown as ExtensionContext;
+    const timestamps = [3_000, 3_400];
+    const tool = createAskMultiChoiceTool({
+      createId: () => "q_multi_empty_done",
+      now: () => timestamps.shift() ?? 3_400
+    });
+
+    const result = await tool.execute(
+      "tool_call_multi_4",
+      {
+        question: "Pick all",
+        options: [
+          { id: "A", label: "First" },
+          { id: "B", label: "Second" }
+        ]
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    // 第一次选“完成”时零选：警告并重开循环，最终只提交了实际选中的项。
+    expect(notify).toHaveBeenCalledWith("至少选择一个选项后再完成。", "warning");
+    expect(select).toHaveBeenCalledTimes(3);
+    expect(result.details).toMatchObject({
+      interactionId: "q_multi_empty_done",
+      type: "multi_choice",
+      answer: { optionIds: ["A"] },
+      responseTimeMs: 400
+    });
+  });
+
   it("treats Escape in the multi-choice loop as a cancelled interaction", async () => {
     const select = vi.fn().mockResolvedValue(undefined);
     const ctx = {
