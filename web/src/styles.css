@@ -184,6 +184,16 @@ body {
   line-height: 1.55;
 }
 
+/* KaTeX 行内公式与正文基线对齐。 */
+.entry-text .katex {
+  font-size: 1.05em;
+}
+
+/* CodeExercise readOnlyRanges（规格 7.8）：只读区灰底视觉标记。 */
+.read-only-range {
+  background: rgba(255, 255, 255, 0.09);
+}
+
 .entry-tutor .entry-text > :first-child {
   margin-top: 0;
 }

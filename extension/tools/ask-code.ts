@@ -16,6 +16,14 @@ const parameters = Type.Object({
   instructions: Type.String({ minLength: 1 }),
   language: Type.String({ minLength: 1 }),
   starterCode: Type.Optional(Type.String()),
+  readOnlyRanges: Type.Optional(
+    Type.Array(
+      Type.Object({
+        start: Type.Integer({ minimum: 0 }),
+        end: Type.Integer({ minimum: 1 })
+      })
+    )
+  ),
   conceptId: Type.Optional(Type.String({ minLength: 1 }))
 });
 
@@ -58,6 +66,9 @@ export function createAskCodeTool(dependencies: CodeToolDependencies = {}) {
         instructions: params.instructions,
         language: params.language,
         starterCode: params.starterCode ?? "",
+        ...(params.readOnlyRanges === undefined
+          ? {}
+          : { readOnlyRanges: params.readOnlyRanges }),
         createdAt: now(),
         ...(params.title === undefined ? {} : { title: params.title }),
         ...(params.conceptId === undefined

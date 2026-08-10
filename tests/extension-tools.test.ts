@@ -363,6 +363,48 @@ describe("learning tools", () => {
     });
   });
 
+  it("normalizes a code request with read-only ranges before presenting it", async () => {
+    const present = vi.fn().mockResolvedValue({
+      interactionId: "q_code_ro",
+      type: "code",
+      answer: { language: "python", code: "x = 1" },
+      responseTimeMs: 250
+    });
+    const ctx = { hasUI: false, ui: {} } as unknown as ExtensionContext;
+    const tool = createAskCodeTool({
+      createId: () => "q_code_ro",
+      now: () => 1_000,
+      present
+    });
+
+    await tool.execute(
+      "tool_call_code_ro",
+      {
+        instructions: "Fill in the function body.",
+        language: "python",
+        starterCode: "def f():\n    pass",
+        readOnlyRanges: [{ start: 0, end: 9 }]
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    expect(present).toHaveBeenCalledWith(
+      {
+        id: "q_code_ro",
+        type: "code",
+        instructions: "Fill in the function body.",
+        language: "python",
+        starterCode: "def f():\n    pass",
+        readOnlyRanges: [{ start: 0, end: 9 }],
+        createdAt: 1_000
+      },
+      undefined,
+      ctx
+    );
+  });
+
   it("routes a TUI single-choice answer through the interaction broker", async () => {
     let resolveSelection: ((value: string) => void) | undefined;
     const select = vi.fn(

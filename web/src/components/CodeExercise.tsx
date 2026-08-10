@@ -1,6 +1,7 @@
 // 代码练习组件（规格 24/25）：Monaco 本地打包、language 只读、Reset、Run、
 // Submit、Ctrl/Cmd+Enter 提交、draft 存 localStorage。Run 只做本地自测
 // （结果仅学习者可见，不进 tool result）；Submit 才提交答案给模型评阅。
+// readOnlyRanges（规格 7.8）：字符偏移数组 → Monaco 局部只读（见 applyReadOnlyRanges）。
 
 import Editor from "@monaco-editor/react";
 import { useEffect, useRef, useState } from "react";
@@ -84,6 +85,76 @@ export default function CodeExercise({
     };
   });
 
+function intersects(a: monaco.IRange, b: monaco.IRange): boolean {
+  const isect = monaco.Range.intersectRanges(a, b);
+  return (
+    isect !== null &&
+    !(isect.startLineNumber === isect.endLineNumber && isect.startColumn === isect.endColumn)
+  );
+}
+
+type PushEditOperations = (
+  beforeCursorState: monaco.Selection[] | null,
+  editOperations: monaco.editor.IIdentifiedSingleEditOperation[],
+  cursorStateComputer: monaco.editor.ICursorStateComputer,
+  group?: string,
+  reason?: unknown
+) => monaco.Selection[] | null;
+
+// 局部只读（规格 7.8）：Monaco 0.56 无内建 readOnlyRanges，这里两层实现——
+// ① createDecorationsCollection 画灰底视觉标记；② 包一层 model.pushEditOperations，
+// 丢弃与只读区相交的编辑（打字/粘贴/拖放都经过此入口）。
+// 已知限制：undo 不经过 pushEditOperations，Ctrl+Z 仍可能改到只读区；
+// 规格字段是可选提示性质，MVP 不做更深的拦截。
+function applyReadOnlyRanges(
+  editor: monaco.editor.IStandaloneCodeEditor,
+  ranges: Array<{ start: number; end: number }>
+): void {
+  const model = editor.getModel();
+  if (model === null || ranges.length === 0) {
+    return;
+  }
+  const roRanges = ranges
+    .filter((r) => r.start >= 0 && r.end > r.start)
+    .map((r) => {
+      const start = model.getPositionAt(r.start);
+      const end = model.getPositionAt(r.end);
+      return new monaco.Range(
+        start.lineNumber,
+        start.column,
+        end.lineNumber,
+        end.column
+      );
+    });
+  if (roRanges.length === 0) {
+    return;
+  }
+
+  editor.createDecorationsCollection(
+    roRanges.map((range) => ({
+      range,
+      options: { inlineClassName: "read-only-range" }
+    }))
+  );
+
+  const original = model.pushEditOperations.bind(model) as unknown as PushEditOperations;
+  // 覆盖实例方法以保持 Monaco 调用签名；仅过滤入参后转发（group/reason 原样透传，
+  // 保证 undo 分组与变更事件元数据不丢）。
+  const wrapper: PushEditOperations = (
+    beforeCursorState,
+    editOperations,
+    cursorStateComputer,
+    group,
+    reason
+  ) => {
+    const allowed = editOperations.filter(
+      (op) => !roRanges.some((ro) => intersects(op.range, ro))
+    );
+    return original(beforeCursorState, allowed, cursorStateComputer, group, reason);
+  };
+  model.pushEditOperations = wrapper as unknown as typeof model.pushEditOperations;
+}
+
   function handleReset(): void {
     setCode(interaction.starterCode);
   }
@@ -107,6 +178,9 @@ export default function CodeExercise({
               monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
               () => submitRef.current()
             );
+            if (interaction.readOnlyRanges !== undefined) {
+              applyReadOnlyRanges(editor, interaction.readOnlyRanges);
+            }
           }}
           options={{
             minimap: { enabled: false },
@@ -155,6 +229,9 @@ export default function CodeExercise({
           {submitting ? "提交中…" : "提交"}
         </button>
         <span className="muted hint">Ctrl/Cmd+Enter 提交</span>
+        {interaction.readOnlyRanges !== undefined && (
+          <span className="muted hint">灰底区域为只读</span>
+        )}
       </div>
     </div>
   );
