@@ -70,11 +70,11 @@ npm run pi
 
 ### `learning_ask_free_response`
 
-单行回答使用 `ctx.ui.input()`，多行回答使用 `ctx.ui.editor()`。结果使用 `{ text }` 保存结构化答案。
+单行回答使用 `ctx.ui.input()`。多行回答在 TUI 模式使用 `ctx.ui.custom() + CustomEditor`（可响应 AbortSignal），非 TUI 模式回退到 `ctx.ui.editor()`。结果使用 `{ text }` 保存结构化答案。
 
 ### `learning_ask_code`
 
-通过 `ctx.ui.editor()` 提供 starter code。结果使用 `{ language, code }`，没有 runner 或隐式代码执行。
+通过多行编辑器提供 starter code：TUI 模式使用 `ctx.ui.custom() + CustomEditor`（可响应 AbortSignal），非 TUI 模式使用 `ctx.ui.editor()`。结果使用 `{ language, code }`，没有 runner 或隐式代码执行。
 
 三个 Tool 都使用 `executionMode: "sequential"`，避免并行 TUI 对话框互相覆盖。
 

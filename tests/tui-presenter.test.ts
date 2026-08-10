@@ -1,0 +1,194 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
+
+import { createAskCodeTool } from "../extension/tools/ask-code.js";
+import { createAskFreeResponseTool } from "../extension/tools/ask-free-response.js";
+import {
+  createBrokerBackedTuiPresenter,
+  type TuiLearningPresenter
+} from "../extension/tools/tui-presenter.js";
+import { InteractionBroker } from "../extension/server/interaction-broker.js";
+
+interface CustomFactory {
+  (tui: unknown, theme: unknown, keybindings: unknown, done: (result: unknown) => void): unknown;
+}
+
+interface PendingCustom {
+  factory: CustomFactory;
+  done: (result: unknown) => void;
+}
+
+/**
+ * Mocks `ctx.ui.custom` the way Pi's TUI resolves it: the factory is invoked
+ * with (tui, theme, keybindings, done) and must return a component; the
+ * promise resolves with whatever `done` receives.
+ */
+function createTuiModeCtx() {
+  const pendings: PendingCustom[] = [];
+  const custom = vi.fn((factory: CustomFactory) => {
+    return new Promise((resolve) => {
+      pendings.push({ factory, done: (result) => resolve(result) });
+    });
+  });
+  const notify = vi.fn();
+  const ctx = {
+    mode: "tui",
+    hasUI: true,
+    ui: { custom, notify }
+  } as unknown as ExtensionContext;
+
+  const instantiate = (): {
+    editor: any;
+    done: (result: unknown) => void;
+  } => {
+    const pending = pendings.shift();
+    if (pending === undefined) {
+      throw new Error("ctx.ui.custom was never called");
+    }
+    const tui = { requestRender: () => {} };
+    const theme = { fg: () => (text: string) => text };
+    const editor = pending.factory(tui, theme, {}, pending.done);
+    return { editor, done: pending.done };
+  };
+
+  return { ctx, custom, notify, instantiate };
+}
+
+describe("TUI custom editor presenter (ctx.mode === 'tui')", () => {
+  it("submits code from the custom editor as a structured tool result", async () => {
+    const { ctx, custom, instantiate } = createTuiModeCtx();
+    const timestamps = [1_000, 1_900];
+    const tool = createAskCodeTool({
+      createId: () => "code_tui",
+      now: () => timestamps.shift() ?? 1_900
+    });
+
+    const resultPromise = tool.execute(
+      "tool_call_1",
+      {
+        instructions: "Implement a generic identity function.",
+        language: "rust",
+        starterCode: "fn identity<T>(value: T) -> T { todo!() }"
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    expect(custom).toHaveBeenCalledTimes(1);
+    const { editor } = instantiate();
+    expect(editor).toBeDefined();
+    expect(editor.getText()).toBe("fn identity<T>(value: T) -> T { todo!() }");
+
+    editor.onSubmit("fn identity<T>(value: T) -> T { value }");
+
+    const result = await resultPromise;
+    expect(result).toEqual({
+      content: [{ type: "text", text: "Learner submitted code in rust." }],
+      details: {
+        interactionId: "code_tui",
+        type: "code",
+        answer: {
+          language: "rust",
+          code: "fn identity<T>(value: T) -> T { value }"
+        },
+        responseTimeMs: 900
+      }
+    });
+  });
+
+  it("submits a multiline free response from the custom editor", async () => {
+    const { ctx, instantiate } = createTuiModeCtx();
+    const timestamps = [2_000, 2_050];
+    const tool = createAskFreeResponseTool({
+      createId: () => "free_tui",
+      now: () => timestamps.shift() ?? 2_050
+    });
+
+    const resultPromise = tool.execute(
+      "tool_call_2",
+      {
+        question: "Explain trait bounds in your own words.",
+        multiline: true
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    const { editor } = instantiate();
+    editor.onSubmit("A trait bound restricts which types T may be.");
+
+    const result = await resultPromise;
+    expect(result.details).toMatchObject({
+      interactionId: "free_tui",
+      type: "free_response",
+      answer: { text: "A trait bound restricts which types T may be." }
+    });
+  });
+
+  it("treats Escape in the custom editor as a cancelled interaction", async () => {
+    const { ctx, instantiate } = createTuiModeCtx();
+    const timestamps = [3_000, 3_100];
+    const tool = createAskCodeTool({
+      createId: () => "code_escape",
+      now: () => timestamps.shift() ?? 3_100
+    });
+
+    const resultPromise = tool.execute(
+      "tool_call_3",
+      {
+        instructions: "Write any code.",
+        language: "python",
+        starterCode: ""
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    const { editor } = instantiate();
+    editor.onEscape();
+
+    await expect(resultPromise).rejects.toThrow(
+      "Learner cancelled interaction code_escape."
+    );
+  });
+
+  it("rejects when the broker cancels while the custom editor is open", async () => {
+    const { ctx, instantiate } = createTuiModeCtx();
+    const broker = new InteractionBroker();
+    const presenter: TuiLearningPresenter =
+      createBrokerBackedTuiPresenter(broker);
+    const interaction = {
+      id: "code_broker_cancel",
+      type: "code" as const,
+      instructions: "Write a function.",
+      language: "go",
+      starterCode: "package main\n",
+      createdAt: 4_000
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const answerPromise = presenter.presentCode(interaction, undefined, ctx);
+      expect(broker.getPending()).toEqual([interaction]);
+
+      instantiate();
+      broker.cancelAll("session_shutdown");
+
+      await expect(answerPromise).rejects.toMatchObject({
+        name: "InteractionCancelledError",
+        message:
+          "Interaction code_broker_cancel was cancelled: session_shutdown."
+      });
+      await Promise.resolve();
+      expect(broker.getPending()).toEqual([]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", onUnhandled);
+    }
+  });
+});

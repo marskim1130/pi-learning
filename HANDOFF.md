@@ -29,13 +29,12 @@
 已执行：
 
 ```powershell
-npm run typecheck
-npm test
+npm run check
 ```
 
-结果：typecheck 通过；7 个测试文件、30 个测试通过。
+结果：typecheck 通过；8 个测试文件、34 个测试通过（含 `tests/tui-presenter.test.ts` 的 4 个 TUI custom editor 用例：submit、multiline free response、Escape 取消、Broker cancel 无 unhandledRejection）。
 
-之前的 Pi RPC loader smoke test 也通过，命令为：
+RPC loader smoke test 通过：
 
 ```powershell
 '{"id":"smoke","type":"get_commands"}' |
@@ -45,15 +44,16 @@ npm test
     -e .\extension\index.ts
 ```
 
-当前目录没有 Git 元数据，不能使用 `git diff/status` 作为变更清单依据。
+当前目录已有 Git 元数据（初始 commit `c52a968`），可用 `git status/diff` 作为变更清单依据。
 
 ## 下一位 Agent 必做
 
-1. 补真实 TUI custom editor 测试：测试设置 `ctx.mode: "tui"`，模拟 `ctx.ui.custom` 工厂，覆盖 submit、Escape、Broker cancel/shutdown；现有 code 测试没有走此分支。
-2. 统一 README 的 editor 描述：第 73/77 行仍写成全部使用 `ctx.ui.editor()`，应明确 TUI 多行/代码走 `ctx.ui.custom + CustomEditor`，非 TUI 才走 `ctx.ui.editor()`。
-3. 重新执行 `npm run check`，再执行 RPC smoke test；若改动了 presenter，检查无 `unhandledRejection`。
+1. ~~补真实 TUI custom editor 测试~~（已完成：`tests/tui-presenter.test.ts`，通过 `ctx.mode: "tui"` + mock `ctx.ui.custom` 工厂，覆盖 submit、multiline free response、Escape、Broker cancel）
+2. ~~统一 README 的 editor 描述~~（已完成：`learning_ask_free_response` / `learning_ask_code` 已明确 TUI 多行/代码走 `ctx.ui.custom + CustomEditor`，非 TUI 才走 `ctx.ui.editor()`）
+3. ~~重新执行 `npm run check` + RPC smoke test~~（已完成：34 测试通过；RPC `get_commands` 返回三个 learning 命令，无 `unhandledRejection`）
 4. 做一次人工验收：启动 `npm run pi`，输入 `/learn rust generics`，确认 Tutor 主动调用三个 learning tool、答案作为当前 tool result 返回，而不是打印假选择题。没有可用模型凭据时，明确记录“待人工验收”，不要伪造成功结果。
-5. 检查是否要在本里程碑明确 `allowSkip` 限制；当前字段保留但没有 skip answer/UI 语义，README 已记录此限制。
+   - 本机已有 deepseek/opencode-go 凭据，但 TUI 交互无法由脚本驱动，**人工验收仍未执行**。
+5. ~~检查是否要明确 `allowSkip` 限制~~（已确认：字段保留但没有 skip answer/UI 语义，README“已知限制”已记录，无需改动）
 
 ## 关键文件
 
