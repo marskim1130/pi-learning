@@ -5,6 +5,7 @@
 import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 
+import MathText from "./MathText";
 import { client, describeSubmitError } from "../api/client";
 import { useLearningWorkspace } from "../state/store";
 import type { MultiChoiceInteraction } from "../types/protocol";
@@ -79,7 +80,7 @@ export default function MultiChoice({
   return (
     <form className="interaction" onSubmit={handleSubmit}>
       <h2 className="interaction-title">多选题</h2>
-      <p className="interaction-question">{interaction.question}</p>
+      <MathText text={interaction.question} className="interaction-question" />
       <p className="muted multi-choice-hint">可能有多个正确答案，请选择所有正确的选项。</p>
       <fieldset
         className="options"

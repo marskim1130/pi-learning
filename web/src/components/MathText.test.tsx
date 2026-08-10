@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 import { afterEach } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
-import MathText, { renderSegments, splitMathSegments } from "./MathText";
+import MathText, {
+  normalizeModelText,
+  renderSegments,
+  splitMathSegments
+} from "./MathText";
 import TutorTranscript from "./TutorTranscript";
 import { useLearningWorkspace } from "../state/store";
 
@@ -80,6 +84,47 @@ describe("splitMathSegments", () => {
       { type: "math", content: "5 与 \\", block: false },
       { type: "text", content: "6" }
     ]);
+  });
+});
+
+describe("normalizeModelText", () => {
+  it("converts literal backslash-n into real newlines", () => {
+    const raw = "第一题：下面代码的输出是？\\n\\nString s1 = \"hello\";";
+    expect(normalizeModelText(raw)).toBe(
+      "第一题：下面代码的输出是？\n\nString s1 = \"hello\";"
+    );
+  });
+
+  it("leaves text without literal escapes untouched", () => {
+    expect(normalizeModelText("plain text\nwith real newline")).toBe(
+      "plain text\nwith real newline"
+    );
+  });
+});
+
+describe("MathText render integration", () => {
+  it("renders a fenced code block in the question text", () => {
+    const { container } = render(
+      <MathText text={"看这段代码：\n\n```rust\nfn max_of<T: PartialOrd>(a: T, b: T) -> T {\n    if a > b { a } else { b }\n}\n```\n\n它做了什么？"} />
+    );
+    expect(container.querySelector("pre code")).not.toBeNull();
+    expect(container.textContent).toContain("fn max_of<T: PartialOrd>");
+  });
+
+  it("normalizes literal backslash-n before rendering", () => {
+    const { container } = render(
+      <MathText text={"a\\nb\\nc"} />
+    );
+    expect(container.textContent).toContain("a");
+    expect(container.textContent).toContain("b");
+    expect(container.textContent).not.toContain("\\n");
+  });
+
+  it("breaks single newlines so bare code lines stay readable", () => {
+    const { container } = render(
+      <MathText text={"System.out.println(s1 == s2);\nSystem.out.println(s1 == s3);"} />
+    );
+    expect(container.querySelectorAll("br").length).toBeGreaterThan(0);
   });
 });
 

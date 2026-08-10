@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import type { KeyboardEvent } from "react";
 
+import MathText from "./MathText";
 import { client, describeSubmitError } from "../api/client";
 import { useLearningWorkspace } from "../state/store";
 import type { FreeResponseInteraction } from "../types/protocol";
@@ -58,7 +59,7 @@ export default function FreeResponse({
       <h2 className="interaction-title">
         {interaction.multiline ? "自由回答" : "简答"}
       </h2>
-      <p className="interaction-question">{interaction.question}</p>
+      <MathText text={interaction.question} className="interaction-question" />
       {interaction.multiline ? (
         <textarea
           className="free-response-input"

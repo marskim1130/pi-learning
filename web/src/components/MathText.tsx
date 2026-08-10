@@ -7,6 +7,15 @@ import { marked } from "marked";
 
 import "katex/dist/katex.min.css";
 
+/**
+ * 归一化模型输出中的字面 "\\n"：部分模型在 JSON 参数里把换行写成双重转义
+ * （\\n），JSON.parse 后仍是反斜杠+n 字面字符。学习场景中这几乎总是转义错误，
+ * 统一还原为真换行（见验收时 Java 题目的 question 字段）。
+ */
+export function normalizeModelText(text: string): string {
+  return text.replace(/\\n/g, "\n");
+}
+
 export type MathSegment =
   | { type: "text"; content: string }
   | { type: "math"; content: string; block: boolean };
@@ -70,7 +79,7 @@ function pushText(segments: MathSegment[], content: string): void {
   }
 }
 
-/** 段列表 → HTML：text 段走 marked（保留 markdown），math 段走 KaTeX。 */
+/** 段列表 → HTML：text 段走 marked（保留 markdown，breaks 让单换行也断行），math 段走 KaTeX。 */
 export function renderSegments(segments: MathSegment[]): string {
   return segments
     .map((segment) =>
@@ -79,18 +88,26 @@ export function renderSegments(segments: MathSegment[]): string {
             throwOnError: false,
             displayMode: segment.block
           })
-        : marked.parse(segment.content, { async: false })
+        : marked.parse(segment.content, { async: false, breaks: true })
     )
     .join("");
 }
 
-export default function MathText({ text }: { text: string }): React.JSX.Element {
+export default function MathText({
+  text,
+  className
+}: {
+  text: string;
+  className?: string;
+}): React.JSX.Element {
   return (
     <div
-      className="entry-text"
+      className={className ?? "entry-text"}
       // XSS 风险：内容来自本地 Tutor 模型输出（学习场景），未消毒直接渲染。
       // 若未来引入外部/用户输入来源，先接 DOMPurify 再落 dangerouslySetInnerHTML。
-      dangerouslySetInnerHTML={{ __html: renderSegments(splitMathSegments(text)) }}
+      dangerouslySetInnerHTML={{
+        __html: renderSegments(splitMathSegments(normalizeModelText(text)))
+      }}
     />
   );
 }

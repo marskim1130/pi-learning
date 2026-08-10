@@ -7,6 +7,7 @@ import Editor from "@monaco-editor/react";
 import { useEffect, useRef, useState } from "react";
 import * as monaco from "monaco-editor";
 
+import MathText from "./MathText";
 import "../monaco-setup";
 import { client, describeRunError, describeSubmitError } from "../api/client";
 import { useLearningWorkspace } from "../state/store";
@@ -185,7 +186,7 @@ function applyReadOnlyRanges(
         {interaction.title ?? "代码练习"}
         <span className="language-badge">{interaction.language}</span>
       </h2>
-      <p className="interaction-question">{interaction.instructions}</p>
+      <MathText text={interaction.instructions} className="interaction-question" />
       <div className="code-editor">
         <Editor
           height="100%"

@@ -4,6 +4,7 @@
 import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 
+import MathText from "./MathText";
 import { client, describeSubmitError } from "../api/client";
 import { useLearningWorkspace } from "../state/store";
 import type { SingleChoiceInteraction } from "../types/protocol";
@@ -61,7 +62,7 @@ export default function SingleChoice({
   return (
     <form className="interaction" onSubmit={handleSubmit}>
       <h2 className="interaction-title">单选题</h2>
-      <p className="interaction-question">{interaction.question}</p>
+      <MathText text={interaction.question} className="interaction-question" />
       <fieldset
         className="options"
         onKeyDown={handleKeyDown}
