@@ -121,7 +121,9 @@ export class LocalCodeRunner implements CodeRunner {
   }
 
   async run(request: CodeRunRequest, signal?: AbortSignal): Promise<CodeRunResult> {
-    const config = this.languages[request.language];
+    const config = Object.prototype.hasOwnProperty.call(this.languages, request.language)
+      ? this.languages[request.language]
+      : undefined;
     if (config === undefined) {
       throw new Error(`Unsupported language: ${request.language}.`);
     }
