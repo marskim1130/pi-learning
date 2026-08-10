@@ -4,6 +4,7 @@ import type { InteractionBroker } from "../server/interaction-broker.js";
 import type { LearningServer } from "../server/learning-server.js";
 import { createAskCodeTool } from "./ask-code.js";
 import { createAskFreeResponseTool } from "./ask-free-response.js";
+import { createAskMultiChoiceTool } from "./ask-multi-choice.js";
 import { createAskSingleChoiceTool } from "./ask-single-choice.js";
 import { createModeAwarePresenter } from "./tui-presenter.js";
 
@@ -23,6 +24,9 @@ export function registerLearningTools(
   );
   pi.registerTool(
     createAskSingleChoiceTool({ present: presenter.presentSingleChoice })
+  );
+  pi.registerTool(
+    createAskMultiChoiceTool({ present: presenter.presentMultiChoice })
   );
   pi.registerTool(
     createAskFreeResponseTool({ present: presenter.presentFreeResponse })

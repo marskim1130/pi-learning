@@ -11,6 +11,8 @@ import type {
   FreeResponseInteraction,
   FreeResponseResolvedAnswer,
   LearningInteraction,
+  MultiChoiceInteraction,
+  MultiChoiceResolvedAnswer,
   ResolvedAnswer,
   SingleChoiceInteraction,
   SingleChoiceResolvedAnswer
@@ -22,6 +24,11 @@ export interface TuiLearningPresenter {
     signal: AbortSignal | undefined,
     ctx: ExtensionContext
   ): Promise<SingleChoiceResolvedAnswer>;
+  presentMultiChoice(
+    interaction: MultiChoiceInteraction,
+    signal: AbortSignal | undefined,
+    ctx: ExtensionContext
+  ): Promise<MultiChoiceResolvedAnswer>;
   presentFreeResponse(
     interaction: FreeResponseInteraction,
     signal: AbortSignal | undefined,
@@ -38,6 +45,8 @@ export function createTuiPresenter(now: () => number = Date.now): TuiLearningPre
   return {
     presentSingleChoice: (interaction, signal, ctx) =>
       presentSingleChoiceInTui(interaction, signal, ctx, now),
+    presentMultiChoice: (interaction, signal, ctx) =>
+      presentMultiChoiceInTui(interaction, signal, ctx, now),
     presentFreeResponse: (interaction, signal, ctx) =>
       presentFreeResponseInTui(interaction, signal, ctx, now),
     presentCode: (interaction, signal, ctx) =>
@@ -54,6 +63,10 @@ export function createBrokerBackedTuiPresenter(
     presentSingleChoice: (interaction, signal, ctx) =>
       presentThroughBroker(broker, interaction, signal, (combinedSignal) =>
         tui.presentSingleChoice(interaction, combinedSignal, ctx)
+      ),
+    presentMultiChoice: (interaction, signal, ctx) =>
+      presentThroughBroker(broker, interaction, signal, (combinedSignal) =>
+        tui.presentMultiChoice(interaction, combinedSignal, ctx)
       ),
     presentFreeResponse: (interaction, signal, ctx) =>
       presentThroughBroker(broker, interaction, signal, (combinedSignal) =>
@@ -83,6 +96,10 @@ export function createModeAwarePresenter(
       hasWebClient()
         ? presentViaBroker(broker, interaction, signal)
         : fallback.presentSingleChoice(interaction, signal, ctx),
+    presentMultiChoice: (interaction, signal, ctx) =>
+      hasWebClient()
+        ? presentViaBroker(broker, interaction, signal)
+        : fallback.presentMultiChoice(interaction, signal, ctx),
     presentFreeResponse: (interaction, signal, ctx) =>
       hasWebClient()
         ? presentViaBroker(broker, interaction, signal)
@@ -99,6 +116,11 @@ function presentViaBroker(
   interaction: SingleChoiceInteraction,
   signal: AbortSignal | undefined
 ): Promise<SingleChoiceResolvedAnswer>;
+function presentViaBroker(
+  broker: InteractionBroker,
+  interaction: MultiChoiceInteraction,
+  signal: AbortSignal | undefined
+): Promise<MultiChoiceResolvedAnswer>;
 function presentViaBroker(
   broker: InteractionBroker,
   interaction: FreeResponseInteraction,
@@ -152,6 +174,71 @@ export async function presentSingleChoiceInTui(
     interactionId: interaction.id,
     type: interaction.type,
     answer: { optionId: option.id },
+    responseTimeMs: elapsedSince(interaction.createdAt, now)
+  };
+}
+
+/**
+ * Multi-select via repeated ctx.ui.select dialogs: pi-tui's SelectList has no
+ * multiSelect mode and pi-tui ships no checkbox component, so each option is
+ * picked in its own dialog; a trailing “done” entry finishes the loop.
+ * Selecting an already-picked option toggles it off. Esc cancels.
+ */
+export async function presentMultiChoiceInTui(
+  interaction: MultiChoiceInteraction,
+  signal: AbortSignal | undefined,
+  ctx: ExtensionContext,
+  now: () => number
+): Promise<MultiChoiceResolvedAnswer> {
+  requireUi(ctx, "Multi-choice learning");
+  throwIfAborted(interaction.id, signal);
+
+  const baseTitle =
+    interaction.title === undefined
+      ? interaction.question
+      : `${interaction.title}\n${interaction.question}`;
+  const choices = interaction.options.map(
+    (option, index) => `${index + 1}. ${option.label}`
+  );
+  const doneItem = "✔ 完成";
+  const selected = new Set<string>();
+
+  for (;;) {
+    const prompt =
+      selected.size === 0
+        ? `${baseTitle}\n（可能有多个正确答案，可多次选择）`
+        : `${baseTitle}\n（已选 ${selected.size} 项，可继续选择，选“✔ 完成”结束）`;
+    const pick = await ctx.ui.select(
+      prompt,
+      [...choices, doneItem],
+      signal === undefined ? undefined : { signal }
+    );
+    throwIfAborted(interaction.id, signal);
+    if (pick === undefined) {
+      throw new Error(`Learner cancelled interaction ${interaction.id}.`);
+    }
+    if (pick === doneItem) {
+      if (selected.size === 0) {
+        ctx.ui.notify("至少选择一个选项后再完成。", "warning");
+        continue;
+      }
+      break;
+    }
+    const option = interaction.options[choices.indexOf(pick)];
+    if (option === undefined) {
+      throw new Error(`TUI returned an unknown choice for ${interaction.id}.`);
+    }
+    if (selected.has(option.id)) {
+      selected.delete(option.id);
+    } else {
+      selected.add(option.id);
+    }
+  }
+
+  return {
+    interactionId: interaction.id,
+    type: interaction.type,
+    answer: { optionIds: [...selected] },
     responseTimeMs: elapsedSince(interaction.createdAt, now)
   };
 }
@@ -221,6 +308,12 @@ function presentThroughBroker(
   signal: AbortSignal | undefined,
   collect: (signal: AbortSignal) => Promise<SingleChoiceResolvedAnswer>
 ): Promise<SingleChoiceResolvedAnswer>;
+function presentThroughBroker(
+  broker: InteractionBroker,
+  interaction: MultiChoiceInteraction,
+  signal: AbortSignal | undefined,
+  collect: (signal: AbortSignal) => Promise<MultiChoiceResolvedAnswer>
+): Promise<MultiChoiceResolvedAnswer>;
 function presentThroughBroker(
   broker: InteractionBroker,
   interaction: FreeResponseInteraction,

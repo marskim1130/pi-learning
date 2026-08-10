@@ -51,6 +51,7 @@ describe("tutor prompt", () => {
     expect(systemPrompt).toContain("existing system prompt");
     expect(systemPrompt).toContain("You are operating in Learning Mode.");
     expect(systemPrompt).toContain("learning_ask_single_choice");
+    expect(systemPrompt).toContain("learning_ask_multi_choice");
     expect(systemPrompt).toContain("learning_ask_free_response");
     expect(systemPrompt).toContain("learning_ask_code");
     expect(systemPrompt).toContain("one primary learner interaction at a time");

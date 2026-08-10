@@ -2,6 +2,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 
 import { createAskSingleChoiceTool } from "../extension/tools/ask-single-choice.js";
+import { createAskMultiChoiceTool } from "../extension/tools/ask-multi-choice.js";
 import { createAskFreeResponseTool } from "../extension/tools/ask-free-response.js";
 import { createAskCodeTool } from "../extension/tools/ask-code.js";
 import { createBrokerBackedTuiPresenter } from "../extension/tools/tui-presenter.js";
@@ -96,6 +97,140 @@ describe("learning tools", () => {
       ctx
     );
     expect(result.details.responseTimeMs).toBe(250);
+  });
+
+  it("returns a TUI multi-choice selection as a structured tool result", async () => {
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce("1. impl<T> Container<T>")
+      .mockResolvedValueOnce("2. fn id<T>(value: T)")
+      .mockResolvedValueOnce("3. fn id(value)")
+      .mockResolvedValueOnce("3. fn id(value)")
+      .mockResolvedValueOnce("✔ 完成");
+    const ctx = {
+      hasUI: true,
+      ui: { select, notify: vi.fn() }
+    } as unknown as ExtensionContext;
+    const timestamps = [1_000, 1_500];
+    const tool = createAskMultiChoiceTool({
+      createId: () => "q_multi_test",
+      now: () => timestamps.shift() ?? 1_500
+    });
+
+    const result = await tool.execute(
+      "tool_call_multi",
+      {
+        question: "Which declarations are generic?",
+        options: [
+          { id: "A", label: "impl<T> Container<T>" },
+          { id: "B", label: "fn id<T>(value: T)" },
+          { id: "C", label: "fn id(value)" }
+        ],
+        conceptId: "rust-generics"
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    // 选 A、B，把 C 加上又取消（toggle），最后完成：期望 [A, B]。
+    expect(select).toHaveBeenCalledTimes(5);
+    expect(select.mock.calls[0]?.[1]).toEqual([
+      "1. impl<T> Container<T>",
+      "2. fn id<T>(value: T)",
+      "3. fn id(value)",
+      "✔ 完成"
+    ]);
+    expect(result).toEqual({
+      content: [{ type: "text", text: "Learner selected options A, B." }],
+      details: {
+        interactionId: "q_multi_test",
+        type: "multi_choice",
+        answer: { optionIds: ["A", "B"] },
+        responseTimeMs: 500,
+        conceptId: "rust-generics"
+      }
+    });
+  });
+
+  it("normalizes a multi-choice request before presenting it", async () => {
+    const present = vi.fn().mockResolvedValue({
+      interactionId: "q_multi_presented",
+      type: "multi_choice",
+      answer: { optionIds: ["A", "B"] },
+      responseTimeMs: 250
+    });
+    const ctx = { hasUI: false, ui: {} } as unknown as ExtensionContext;
+    const tool = createAskMultiChoiceTool({
+      createId: () => "q_multi_presented",
+      now: () => 1_000,
+      present
+    });
+
+    const result = await tool.execute(
+      "tool_call_multi_2",
+      {
+        title: "Generics",
+        question: "Pick all that apply",
+        options: [
+          { id: "A", label: "First" },
+          { id: "B", label: "Second" },
+          { id: "C", label: "Third" }
+        ]
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    expect(present).toHaveBeenCalledWith(
+      {
+        id: "q_multi_presented",
+        type: "multi_choice",
+        title: "Generics",
+        question: "Pick all that apply",
+        options: [
+          { id: "A", label: "First" },
+          { id: "B", label: "Second" },
+          { id: "C", label: "Third" }
+        ],
+        allowSkip: false,
+        createdAt: 1_000
+      },
+      undefined,
+      ctx
+    );
+    expect(result.details.responseTimeMs).toBe(250);
+  });
+
+  it("treats Escape in the multi-choice loop as a cancelled interaction", async () => {
+    const select = vi.fn().mockResolvedValue(undefined);
+    const ctx = {
+      hasUI: true,
+      ui: { select, notify: vi.fn() }
+    } as unknown as ExtensionContext;
+    const timestamps = [2_000, 2_100];
+    const tool = createAskMultiChoiceTool({
+      createId: () => "q_multi_cancel",
+      now: () => timestamps.shift() ?? 2_100
+    });
+
+    await expect(
+      tool.execute(
+        "tool_call_multi_3",
+        {
+          question: "Pick all",
+          options: [
+            { id: "A", label: "First" },
+            { id: "B", label: "Second" }
+          ]
+        },
+        undefined,
+        undefined,
+        ctx
+      )
+    ).rejects.toThrow("Learner cancelled interaction q_multi_cancel.");
+    expect(select).toHaveBeenCalledTimes(1);
   });
 
   it("returns a single-line free response from the TUI input", async () => {

@@ -23,6 +23,21 @@ function singleChoiceInteraction(id: string): LearningInteraction {
   };
 }
 
+function multiChoiceInteraction(id: string): LearningInteraction {
+  return {
+    id,
+    type: "multi_choice",
+    question: `Question ${id}`,
+    options: [
+      { id: "A", label: "First" },
+      { id: "B", label: "Second" },
+      { id: "C", label: "Third" }
+    ],
+    allowSkip: false,
+    createdAt: 1_000
+  };
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timed out after ${ms} ms.`)), ms);
@@ -330,6 +345,53 @@ describe("LearningServer HTTP API", () => {
       }
     });
     expect(broker.getPending()).toEqual([]);
+  });
+
+  it("accepts a valid multi_choice submission and clears the pending interaction", async () => {
+    void broker.present(multiChoiceInteraction("q_multi_valid"));
+    const response = await fetch(
+      `${origin}/api/interactions/q_multi_valid/submit`,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interactionId: "q_multi_valid",
+          answer: { optionIds: ["A", "C"] },
+          clientTimestamp: 1_100
+        })
+      }
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      answer: {
+        interactionId: "q_multi_valid",
+        type: "multi_choice",
+        answer: { optionIds: ["A", "C"] }
+      }
+    });
+    expect(broker.getPending()).toEqual([]);
+  });
+
+  it("rejects an empty multi_choice answer with 400", async () => {
+    void broker.present(multiChoiceInteraction("q_multi_empty"));
+    const response = await fetch(
+      `${origin}/api/interactions/q_multi_empty/submit`,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          interactionId: "q_multi_empty",
+          answer: { optionIds: [] },
+          clientTimestamp: 1_100
+        })
+      }
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      reason: "invalid_answer"
+    });
   });
 
   it("streams connected/presented/resolved events over SSE", async () => {

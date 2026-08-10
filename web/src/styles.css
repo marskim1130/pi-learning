@@ -216,6 +216,10 @@ body {
   gap: 0.5rem;
 }
 
+.multi-choice-hint {
+  margin: -0.5rem 0 0.75rem;
+}
+
 .option {
   display: flex;
   align-items: center;

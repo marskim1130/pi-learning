@@ -296,6 +296,8 @@ function describeResolvedAnswer(answer: ResolvedAnswer): string {
   switch (answer.type) {
     case "single_choice":
       return answer.answer.optionId;
+    case "multi_choice":
+      return answer.answer.optionIds.join(", ");
     case "free_response":
       return answer.answer.text;
     case "code":
@@ -311,6 +313,7 @@ function isInteraction(value: unknown): value is LearningInteraction {
   return (
     typeof record.id === "string" &&
     (record.type === "single_choice" ||
+      record.type === "multi_choice" ||
       record.type === "free_response" ||
       record.type === "code")
   );
@@ -324,6 +327,7 @@ function isResolvedAnswer(value: unknown): value is ResolvedAnswer {
   return (
     typeof record.interactionId === "string" &&
     (record.type === "single_choice" ||
+      record.type === "multi_choice" ||
       record.type === "free_response" ||
       record.type === "code") &&
     typeof record.answer === "object" &&

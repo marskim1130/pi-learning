@@ -54,6 +54,65 @@ describe("InteractionBroker", () => {
     expect(submitResult.ok).toBe(true);
   });
 
+  it("resolves a multi_choice submission with the structured answer and clears pending", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_500);
+    const broker = new InteractionBroker();
+    const interaction = {
+      id: "q_multi",
+      type: "multi_choice" as const,
+      question: "Which are generic?",
+      options: [
+        { id: "A", label: "fn id<T>(value: T)" },
+        { id: "B", label: "struct Container<T>" },
+        { id: "C", label: "fn id(value)" }
+      ],
+      allowSkip: false,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+
+    const submitResult = broker.submit({
+      interactionId: "q_multi",
+      answer: { optionIds: ["A", "B"] },
+      clientTimestamp: 1_450
+    });
+
+    await expect(answerPromise).resolves.toEqual({
+      interactionId: "q_multi",
+      type: "multi_choice",
+      answer: { optionIds: ["A", "B"] },
+      responseTimeMs: 500
+    });
+    expect(submitResult.ok).toBe(true);
+    expect(broker.getPending()).toEqual([]);
+  });
+
+  it("rejects a multi_choice answer with unknown options", () => {
+    const broker = new InteractionBroker();
+    const interaction = {
+      id: "q_multi_invalid",
+      type: "multi_choice" as const,
+      question: "Pick all",
+      options: [{ id: "A", label: "Answer" }, { id: "B", label: "Other" }],
+      allowSkip: false,
+      createdAt: 1_000
+    };
+    void broker.present(interaction);
+
+    expect(
+      broker.submit({
+        interactionId: interaction.id,
+        answer: { optionIds: ["A", "Z"] },
+        clientTimestamp: 1_100
+      })
+    ).toEqual({
+      ok: false,
+      reason: "invalid_answer",
+      message: "Option Z does not belong to interaction q_multi_invalid."
+    });
+    expect(broker.getPending()).toEqual([interaction]);
+  });
+
   it("rejects an unknown interaction id without changing pending work", () => {
     const broker = new InteractionBroker();
     const interaction = {

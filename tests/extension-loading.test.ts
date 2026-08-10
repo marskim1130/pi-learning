@@ -31,6 +31,7 @@ describe("Pi extension loading", () => {
       expect([...extension!.tools.keys()].sort()).toEqual([
         "learning_ask_code",
         "learning_ask_free_response",
+        "learning_ask_multi_choice",
         "learning_ask_single_choice"
       ]);
       expect([...extension!.commands.keys()].sort()).toEqual([

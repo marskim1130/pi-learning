@@ -18,6 +18,21 @@ export interface SingleChoiceAnswer {
   optionId: string;
 }
 
+export interface MultiChoiceInteraction {
+  id: string;
+  type: "multi_choice";
+  title?: string;
+  question: string;
+  options: ChoiceOption[];
+  conceptId?: string;
+  allowSkip: boolean;
+  createdAt: number;
+}
+
+export interface MultiChoiceAnswer {
+  optionIds: string[];
+}
+
 export interface FreeResponseInteraction {
   id: string;
   type: "free_response";
@@ -51,6 +66,7 @@ export interface CodeExerciseAnswer {
 
 export type LearningInteraction =
   | SingleChoiceInteraction
+  | MultiChoiceInteraction
   | FreeResponseInteraction
   | CodeExerciseInteraction;
 
@@ -58,6 +74,13 @@ export interface SingleChoiceResolvedAnswer {
   interactionId: string;
   type: "single_choice";
   answer: SingleChoiceAnswer;
+  responseTimeMs: number;
+}
+
+export interface MultiChoiceResolvedAnswer {
+  interactionId: string;
+  type: "multi_choice";
+  answer: MultiChoiceAnswer;
   responseTimeMs: number;
 }
 
@@ -77,6 +100,7 @@ export interface CodeExerciseResolvedAnswer {
 
 export type ResolvedAnswer =
   | SingleChoiceResolvedAnswer
+  | MultiChoiceResolvedAnswer
   | FreeResponseResolvedAnswer
   | CodeExerciseResolvedAnswer;
 

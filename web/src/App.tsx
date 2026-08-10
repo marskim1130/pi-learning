@@ -7,6 +7,7 @@ import { initialize, useLearningWorkspace } from "./state/store";
 import type { LearningInteraction } from "./types/protocol";
 import CodeExercise from "./components/CodeExercise";
 import FreeResponse from "./components/FreeResponse";
+import MultiChoice from "./components/MultiChoice";
 import ProgressPanel from "./components/ProgressPanel";
 import SingleChoice from "./components/SingleChoice";
 import StatusBar from "./components/StatusBar";
@@ -84,6 +85,8 @@ function InteractionView({
   switch (interaction.type) {
     case "single_choice":
       return <SingleChoice interaction={interaction} />;
+    case "multi_choice":
+      return <MultiChoice interaction={interaction} />;
     case "free_response":
       return <FreeResponse interaction={interaction} />;
     case "code":

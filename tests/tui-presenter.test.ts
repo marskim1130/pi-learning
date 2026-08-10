@@ -291,6 +291,41 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
     expect(broker.getPending()).toEqual([]);
   });
 
+  it("web branch covers multi_choice broker-only (ctx.ui untouched, submit resolves)", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(5_100);
+    const broker = new InteractionBroker();
+    const select = vi.fn();
+    const ctx = { hasUI: true, ui: { select } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => true);
+    const interaction = {
+      id: "web_multi_choice",
+      type: "multi_choice" as const,
+      question: "Pick all that apply.",
+      options: [
+        { id: "A", label: "First" },
+        { id: "B", label: "Second" },
+        { id: "C", label: "Third" }
+      ],
+      allowSkip: false,
+      createdAt: 5_000
+    };
+
+    const answerPromise = presenter.presentMultiChoice(interaction, undefined, ctx);
+    expect(select).not.toHaveBeenCalled();
+    expect(broker.getPending()).toEqual([interaction]);
+
+    const submitted = broker.submit({
+      interactionId: interaction.id,
+      answer: { optionIds: ["A", "C"] },
+      clientTimestamp: 5_100
+    });
+    expect(submitted.ok).toBe(true);
+
+    const answer = await answerPromise;
+    expect(answer.answer).toEqual({ optionIds: ["A", "C"] });
+    expect(broker.getPending()).toEqual([]);
+  });
+
   it("falls back to the TUI select when no web client is connected", async () => {
     const broker = new InteractionBroker();
     const select = vi.fn().mockResolvedValue("2. Second");

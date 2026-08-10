@@ -2,11 +2,13 @@ import type {
   CodeExerciseAnswer,
   FreeResponseAnswer,
   LearningInteraction,
+  MultiChoiceAnswer,
   SingleChoiceAnswer
 } from "../server/protocol.js";
 
 export type AnswerValidationResult =
   | { ok: true; type: "single_choice"; answer: SingleChoiceAnswer }
+  | { ok: true; type: "multi_choice"; answer: MultiChoiceAnswer }
   | { ok: true; type: "free_response"; answer: FreeResponseAnswer }
   | { ok: true; type: "code"; answer: CodeExerciseAnswer }
   | { ok: false; message: string };
@@ -57,6 +59,56 @@ export function validateInteractionAnswer(
     }
 
     return { ok: true, type: interaction.type, answer: { text: answer.text } };
+  }
+
+  if (interaction.type === "multi_choice") {
+    if (
+      typeof answer !== "object" ||
+      answer === null ||
+      !("optionIds" in answer) ||
+      !Array.isArray(answer.optionIds)
+    ) {
+      return {
+        ok: false,
+        message: `Interaction ${interaction.id} requires an optionIds array.`
+      };
+    }
+
+    if (answer.optionIds.length === 0) {
+      return {
+        ok: false,
+        message: `Interaction ${interaction.id} requires at least one selected option.`
+      };
+    }
+
+    if (!answer.optionIds.every((optionId) => typeof optionId === "string")) {
+      return {
+        ok: false,
+        message: `Interaction ${interaction.id} requires optionIds to be strings.`
+      };
+    }
+
+    const validIds = new Set(interaction.options.map((option) => option.id));
+    const unknown = answer.optionIds.find((optionId) => !validIds.has(optionId));
+    if (unknown !== undefined) {
+      return {
+        ok: false,
+        message: `Option ${unknown} does not belong to interaction ${interaction.id}.`
+      };
+    }
+
+    if (new Set(answer.optionIds).size !== answer.optionIds.length) {
+      return {
+        ok: false,
+        message: `Interaction ${interaction.id} contains duplicate options.`
+      };
+    }
+
+    return {
+      ok: true,
+      type: interaction.type,
+      answer: { optionIds: answer.optionIds }
+    };
   }
 
   if (

@@ -134,6 +134,14 @@ export class InteractionBroker {
           responseTimeMs
         };
         break;
+      case "multi_choice":
+        answer = {
+          interactionId: pending.interaction.id,
+          type: validation.type,
+          answer: validation.answer,
+          responseTimeMs
+        };
+        break;
       case "free_response":
         answer = {
           interactionId: pending.interaction.id,
