@@ -16,7 +16,7 @@ vi.mock("../api/client", () => ({
   describeSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : "提交失败，请重试。",
   describeRunError: () => "运行失败，请重试。",
-  client: { submit: vi.fn(), runCode: vi.fn() }
+  client: { submit: vi.fn(), skip: vi.fn(), runCode: vi.fn() }
 }));
 
 const interaction: MultiChoiceInteraction = {
@@ -33,6 +33,7 @@ const interaction: MultiChoiceInteraction = {
 };
 
 const submit = vi.mocked(client.submit);
+const skip = vi.mocked(client.skip);
 
 beforeEach(() => {
   submit.mockReset();
@@ -42,6 +43,16 @@ beforeEach(() => {
       interactionId: "mc_1",
       type: "multi_choice",
       answer: { optionIds: ["A", "C"] },
+      responseTimeMs: 5
+    }
+  });
+  skip.mockReset();
+  skip.mockResolvedValue({
+    ok: true,
+    answer: {
+      interactionId: "mc_1",
+      type: "multi_choice",
+      skipped: true,
       responseTimeMs: 5
     }
   });
@@ -105,5 +116,26 @@ describe("MultiChoice", () => {
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith("mc_1", { optionIds: ["A", "C"] })
     );
+  });
+
+  it("hides the skip button unless allowSkip is set", () => {
+    render(<MultiChoice interaction={interaction} />);
+    expect(screen.queryByRole("button", { name: "跳过此题" })).toBeNull();
+  });
+
+  it("skips without requiring a selection when allowSkip is set", async () => {
+    render(<MultiChoice interaction={{ ...interaction, allowSkip: true }} />);
+
+    const submitButton = screen.getByRole("button", { name: "提交答案" });
+    expect((submitButton as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "跳过此题" }));
+
+    await waitFor(() => expect(skip).toHaveBeenCalledWith("mc_1"));
+    expect(submit).not.toHaveBeenCalled();
+    expect(
+      (screen.getByRole("button", { name: "跳过此题" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
   });
 });

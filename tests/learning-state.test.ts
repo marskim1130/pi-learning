@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   INITIAL_MASTERY,
   LearningStateStore,
+  nextPhase,
   updateMastery
 } from "../extension/state/learning-state.js";
 import type { ConceptState } from "../extension/state/types.js";
@@ -413,5 +414,169 @@ describe("LearningStateStore.recordAttempt", () => {
     const store = new LearningStateStore({ onChange });
     store.restore({ nonsense: true });
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("resetTopic (spec 18 /learn-reset)", () => {
+  it("clears concepts, attempts and the idempotency ledger but keeps the topic", () => {
+    const store = new LearningStateStore();
+    store.start({
+      course: { id: "rust", title: "Rust" },
+      topic: { id: "generics", title: "Generics" }
+    });
+    store.recordAttempt({
+      interactionId: "q_1",
+      conceptId: "trait_bounds",
+      outcome: "correct",
+      evidenceType: "choice"
+    });
+    store.recordAttempt({
+      interactionId: "q_2",
+      conceptId: "trait_bounds",
+      outcome: "incorrect",
+      evidenceType: "code",
+      misconception: "Confuses defining with constraining"
+    });
+
+    store.resetTopic();
+
+    const snapshot = store.snapshot();
+    expect(snapshot.enabled).toBe(true);
+    expect(snapshot.topic).toEqual({ id: "generics", title: "Generics" });
+    expect(snapshot.phase).toBe("diagnosing");
+    expect(snapshot.concepts).toEqual({});
+    expect(snapshot.recentAttempts).toEqual([]);
+    expect(snapshot.recordedInteractionIds).toEqual([]);
+    // The idempotency ledger is cleared too: the same interaction can be
+    // recorded again in the fresh session.
+    expect(
+      store.recordAttempt({
+        interactionId: "q_1",
+        conceptId: "trait_bounds",
+        outcome: "correct",
+        evidenceType: "choice"
+      }).interactionId
+    ).toBe("q_1");
+  });
+
+  it("notifies onChange so the web session snapshot refreshes", () => {
+    const onChange = vi.fn();
+    const store = new LearningStateStore({ onChange });
+    store.start({
+      course: { id: "rust", title: "Rust" },
+      topic: { id: "generics", title: "Generics" }
+    });
+    onChange.mockClear();
+
+    store.resetTopic();
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("nextPhase (spec 15)", () => {
+  it("starts diagnosing and stops to idle", () => {
+    expect(nextPhase("idle", { type: "start" })).toBe("diagnosing");
+    expect(nextPhase("practicing", { type: "stop" })).toBe("idle");
+  });
+
+  it("migrates explaining → checking on question_presented, keeps other phases", () => {
+    expect(nextPhase("explaining", { type: "question_presented" })).toBe(
+      "checking"
+    );
+    expect(nextPhase("diagnosing", { type: "question_presented" })).toBe(
+      "diagnosing"
+    );
+    expect(nextPhase("practicing", { type: "question_presented" })).toBe(
+      "practicing"
+    );
+    expect(nextPhase("reviewing", { type: "question_presented" })).toBe(
+      "reviewing"
+    );
+  });
+
+  it("moves to practicing on correct, back to diagnosing on incorrect, stays on partial", () => {
+    expect(
+      nextPhase("checking", { type: "attempt_recorded", outcome: "correct" })
+    ).toBe("practicing");
+    expect(
+      nextPhase("checking", { type: "attempt_recorded", outcome: "incorrect" })
+    ).toBe("diagnosing");
+    expect(
+      nextPhase("checking", { type: "attempt_recorded", outcome: "partial" })
+    ).toBe("checking");
+  });
+
+  it("records the misconception-loop cycle explaining → checking → diagnosing → practicing", () => {
+    const loop = [
+      nextPhase("explaining", { type: "question_presented" }),
+      nextPhase("checking", { type: "attempt_recorded", outcome: "incorrect" }),
+      // Re-diagnosis questions stay in diagnosing; a correct answer moves on.
+      nextPhase("diagnosing", { type: "question_presented" }),
+      nextPhase("diagnosing", { type: "attempt_recorded", outcome: "correct" })
+    ];
+    expect(loop).toEqual(["checking", "diagnosing", "diagnosing", "practicing"]);
+  });
+});
+
+describe("phase migration wiring", () => {
+  it("questionPresented migrates explaining → checking and notifies once", () => {
+    const onChange = vi.fn();
+    const store = new LearningStateStore({ onChange });
+    store.start({
+      course: { id: "rust", title: "Rust" },
+      topic: { id: "generics", title: "Generics" }
+    });
+    onChange.mockClear();
+
+    // simulate the tutor explaining then asking
+    store.restore({
+      ...store.snapshot(),
+      phase: "explaining"
+    });
+    store.questionPresented();
+    expect(store.snapshot().phase).toBe("checking");
+    expect(onChange).toHaveBeenCalledTimes(1);
+
+    // no phase change → no extra notification
+    store.questionPresented();
+    expect(store.snapshot().phase).toBe("checking");
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("recordAttempt migrates the phase while learning mode is on", () => {
+    const store = new LearningStateStore();
+    store.start({
+      course: { id: "rust", title: "Rust" },
+      topic: { id: "generics", title: "Generics" }
+    });
+    store.restore({ ...store.snapshot(), phase: "checking" });
+
+    store.recordAttempt({
+      interactionId: "q_1",
+      conceptId: "trait_bounds",
+      outcome: "incorrect",
+      evidenceType: "choice"
+    });
+    expect(store.snapshot().phase).toBe("diagnosing");
+
+    store.recordAttempt({
+      interactionId: "q_2",
+      conceptId: "trait_bounds",
+      outcome: "correct",
+      evidenceType: "choice"
+    });
+    expect(store.snapshot().phase).toBe("practicing");
+  });
+
+  it("does not migrate the phase when learning mode is off", () => {
+    const store = new LearningStateStore();
+    store.recordAttempt({
+      interactionId: "q_1",
+      conceptId: "c",
+      outcome: "correct",
+      evidenceType: "choice"
+    });
+    expect(store.snapshot().phase).toBe("idle");
   });
 });

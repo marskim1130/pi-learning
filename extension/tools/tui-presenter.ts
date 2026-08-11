@@ -15,20 +15,30 @@ import type {
   MultiChoiceResolvedAnswer,
   ResolvedAnswer,
   SingleChoiceInteraction,
-  SingleChoiceResolvedAnswer
+  SingleChoiceResolvedAnswer,
+  SkippedResolvedAnswer
 } from "../server/protocol.js";
+
+/** Single/multi choice answers may end as a structured skip (spec 7.5). */
+export type ChoiceResolvedAnswer =
+  | SingleChoiceResolvedAnswer
+  | SkippedResolvedAnswer;
+
+export type MultiChoiceResolvedAnswerOrSkip =
+  | MultiChoiceResolvedAnswer
+  | SkippedResolvedAnswer;
 
 export interface TuiLearningPresenter {
   presentSingleChoice(
     interaction: SingleChoiceInteraction,
     signal: AbortSignal | undefined,
     ctx: ExtensionContext
-  ): Promise<SingleChoiceResolvedAnswer>;
+  ): Promise<ChoiceResolvedAnswer>;
   presentMultiChoice(
     interaction: MultiChoiceInteraction,
     signal: AbortSignal | undefined,
     ctx: ExtensionContext
-  ): Promise<MultiChoiceResolvedAnswer>;
+  ): Promise<MultiChoiceResolvedAnswerOrSkip>;
   presentFreeResponse(
     interaction: FreeResponseInteraction,
     signal: AbortSignal | undefined,
@@ -141,12 +151,12 @@ function presentViaBroker(
   broker: InteractionBroker,
   interaction: SingleChoiceInteraction,
   signal: AbortSignal | undefined
-): Promise<SingleChoiceResolvedAnswer>;
+): Promise<ChoiceResolvedAnswer>;
 function presentViaBroker(
   broker: InteractionBroker,
   interaction: MultiChoiceInteraction,
   signal: AbortSignal | undefined
-): Promise<MultiChoiceResolvedAnswer>;
+): Promise<MultiChoiceResolvedAnswerOrSkip>;
 function presentViaBroker(
   broker: InteractionBroker,
   interaction: FreeResponseInteraction,
@@ -172,15 +182,15 @@ function presentViaBrokerWithFallback(
   hasWebClient: () => boolean,
   interaction: SingleChoiceInteraction,
   signal: AbortSignal | undefined,
-  fallback: () => Promise<SingleChoiceResolvedAnswer>
-): Promise<SingleChoiceResolvedAnswer>;
+  fallback: () => Promise<ChoiceResolvedAnswer>
+): Promise<ChoiceResolvedAnswer>;
 function presentViaBrokerWithFallback(
   broker: InteractionBroker,
   hasWebClient: () => boolean,
   interaction: MultiChoiceInteraction,
   signal: AbortSignal | undefined,
-  fallback: () => Promise<MultiChoiceResolvedAnswer>
-): Promise<MultiChoiceResolvedAnswer>;
+  fallback: () => Promise<MultiChoiceResolvedAnswerOrSkip>
+): Promise<MultiChoiceResolvedAnswerOrSkip>;
 function presentViaBrokerWithFallback(
   broker: InteractionBroker,
   hasWebClient: () => boolean,
@@ -273,23 +283,33 @@ export async function presentSingleChoiceInTui(
   signal: AbortSignal | undefined,
   ctx: ExtensionContext,
   now: () => number
-): Promise<SingleChoiceResolvedAnswer> {
+): Promise<ChoiceResolvedAnswer> {
   requireUi(ctx, "Single-choice learning");
   throwIfAborted(interaction.id, signal);
 
   const choices = interaction.options.map(
     (option, index) => `${index + 1}. ${option.label}`
   );
+  const skipItem = "跳过此题";
+  const menu = interaction.allowSkip ? [...choices, skipItem] : choices;
   const selected = await ctx.ui.select(
     interaction.title === undefined
       ? interaction.question
       : `${interaction.title}\n${interaction.question}`,
-    choices,
+    menu,
     signal === undefined ? undefined : { signal }
   );
   throwIfAborted(interaction.id, signal);
   if (selected === undefined) {
     throw new Error(`Learner cancelled interaction ${interaction.id}.`);
+  }
+  if (selected === skipItem) {
+    return {
+      interactionId: interaction.id,
+      type: interaction.type,
+      skipped: true,
+      responseTimeMs: elapsedSince(interaction.createdAt, now)
+    };
   }
 
   const option = interaction.options[choices.indexOf(selected)];
@@ -316,7 +336,7 @@ export async function presentMultiChoiceInTui(
   signal: AbortSignal | undefined,
   ctx: ExtensionContext,
   now: () => number
-): Promise<MultiChoiceResolvedAnswer> {
+): Promise<MultiChoiceResolvedAnswerOrSkip> {
   requireUi(ctx, "Multi-choice learning");
   throwIfAborted(interaction.id, signal);
 
@@ -328,6 +348,10 @@ export async function presentMultiChoiceInTui(
     (option, index) => `${index + 1}. ${option.label}`
   );
   const doneItem = "✔ 完成";
+  const skipItem = "跳过此题";
+  const menu = interaction.allowSkip
+    ? [...choices, doneItem, skipItem]
+    : [...choices, doneItem];
   const selected = new Set<string>();
 
   for (;;) {
@@ -337,12 +361,20 @@ export async function presentMultiChoiceInTui(
         : `${baseTitle}\n（已选 ${selected.size} 项，可继续选择，选“✔ 完成”结束）`;
     const pick = await ctx.ui.select(
       prompt,
-      [...choices, doneItem],
+      menu,
       signal === undefined ? undefined : { signal }
     );
     throwIfAborted(interaction.id, signal);
     if (pick === undefined) {
       throw new Error(`Learner cancelled interaction ${interaction.id}.`);
+    }
+    if (pick === skipItem) {
+      return {
+        interactionId: interaction.id,
+        type: interaction.type,
+        skipped: true,
+        responseTimeMs: elapsedSince(interaction.createdAt, now)
+      };
     }
     if (pick === doneItem) {
       if (selected.size === 0) {
@@ -433,14 +465,14 @@ function presentThroughBroker(
   broker: InteractionBroker,
   interaction: SingleChoiceInteraction,
   signal: AbortSignal | undefined,
-  collect: (signal: AbortSignal) => Promise<SingleChoiceResolvedAnswer>
-): Promise<SingleChoiceResolvedAnswer>;
+  collect: (signal: AbortSignal) => Promise<ChoiceResolvedAnswer>
+): Promise<ChoiceResolvedAnswer>;
 function presentThroughBroker(
   broker: InteractionBroker,
   interaction: MultiChoiceInteraction,
   signal: AbortSignal | undefined,
-  collect: (signal: AbortSignal) => Promise<MultiChoiceResolvedAnswer>
-): Promise<MultiChoiceResolvedAnswer>;
+  collect: (signal: AbortSignal) => Promise<MultiChoiceResolvedAnswerOrSkip>
+): Promise<MultiChoiceResolvedAnswerOrSkip>;
 function presentThroughBroker(
   broker: InteractionBroker,
   interaction: FreeResponseInteraction,
@@ -485,11 +517,16 @@ async function presentThroughBroker(
       return outcome.answer;
     }
 
-    const submission = broker.submit({
-      interactionId: interaction.id,
-      answer: outcome.answer.answer,
-      clientTimestamp: Date.now()
-    });
+    // The TUI resolved the interaction: feed the result back through the
+    // broker so the web client sees the same resolved/cancelled events. A
+    // skipped TUI answer goes through broker.skip, not submit.
+    const submission = "skipped" in outcome.answer
+      ? broker.skip(interaction.id)
+      : broker.submit({
+          interactionId: interaction.id,
+          answer: outcome.answer.answer,
+          clientTimestamp: Date.now()
+        });
     if (!submission.ok) {
       throw new Error(submission.message);
     }

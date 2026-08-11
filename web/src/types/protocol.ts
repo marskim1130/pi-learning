@@ -157,11 +157,20 @@ export interface CodeExerciseResolvedAnswer {
   responseTimeMs: number;
 }
 
+/** 结构化跳过（规格 7.5 allowSkip）：仅单选/多选支持。 */
+export interface SkippedResolvedAnswer {
+  interactionId: string;
+  type: "single_choice" | "multi_choice";
+  skipped: true;
+  responseTimeMs: number;
+}
+
 export type ResolvedAnswer =
   | SingleChoiceResolvedAnswer
   | MultiChoiceResolvedAnswer
   | FreeResponseResolvedAnswer
-  | CodeExerciseResolvedAnswer;
+  | CodeExerciseResolvedAnswer
+  | SkippedResolvedAnswer;
 
 /** 题目文本，用于 transcript 展示。 */
 export function interactionQuestion(interaction: LearningInteraction): string {

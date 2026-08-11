@@ -15,6 +15,45 @@ export interface StartLearningInput {
   topic: LearningTopic;
 }
 
+/**
+ * Application-layer phase transition events (spec 15). The model decides the
+ * teaching, the app only records the current phase label: transitions fire
+ * from /learn, question presentation (broker.onPresented) and recorded
+ * attempts.
+ */
+export type PhaseEvent =
+  | { type: "start" }
+  | { type: "stop" }
+  | { type: "question_presented" }
+  | { type: "attempt_recorded"; outcome: AttemptOutcome };
+
+/**
+ * Pure phase transition table (spec 15). Deliberately coarse:
+ * - start → diagnosing
+ * - stop → idle
+ * - question_presented: explaining → checking; other phases keep their label
+ *   (diagnosing questions stay diagnosing, application stays practicing)
+ * - attempt_recorded: correct → practicing, incorrect → diagnosing
+ *   (misconception loop), partial keeps the current phase
+ * reviewing is not auto-reached by any event yet (no /learn-review trigger);
+ * it survives only via state restore/persistence.
+ */
+export function nextPhase(phase: LearningPhase, event: PhaseEvent): LearningPhase {
+  switch (event.type) {
+    case "start":
+      return "diagnosing";
+    case "stop":
+      return "idle";
+    case "question_presented":
+      return phase === "explaining" ? "checking" : phase;
+    case "attempt_recorded":
+      if (event.outcome === "correct") {
+        return "practicing";
+      }
+      return event.outcome === "incorrect" ? "diagnosing" : phase;
+  }
+}
+
 export interface RecordAttemptInput {
   interactionId: string;
   conceptId: string;
@@ -114,7 +153,7 @@ export class LearningStateStore {
       enabled: true,
       course: { ...input.course },
       topic: { ...input.topic },
-      phase: "diagnosing"
+      phase: nextPhase(this.state.phase, { type: "start" })
     };
     this.notifyChange();
   }
@@ -123,9 +162,41 @@ export class LearningStateStore {
     this.state = {
       ...this.state,
       enabled: false,
-      phase: "idle"
+      phase: nextPhase(this.state.phase, { type: "stop" })
     };
     this.notifyChange();
+  }
+
+  /**
+   * Spec 18 /learn-reset: clear the current topic's learner state (concepts,
+   * mastery, attempt history, idempotency ledger) but keep course/topic and
+   * learning mode; a fresh session starts diagnosing again.
+   */
+  resetTopic(): void {
+    this.state = {
+      ...this.state,
+      phase: nextPhase(this.state.phase, { type: "start" }),
+      concepts: {},
+      recentAttempts: [],
+      recordedInteractionIds: []
+    };
+    this.notifyChange();
+  }
+
+  /**
+   * Spec 15: a learning_ask_* tool presented a question. Only migrates
+   * explaining → checking; other phases keep their label. No-op when learning
+   * mode is off.
+   */
+  questionPresented(): void {
+    if (!this.state.enabled) {
+      return;
+    }
+    const phase = nextPhase(this.state.phase, { type: "question_presented" });
+    if (phase !== this.state.phase) {
+      this.state.phase = phase;
+      this.notifyChange();
+    }
   }
 
   /**
@@ -200,6 +271,15 @@ export class LearningStateStore {
       input.interactionId,
       ...recordedInteractionIds
     ].slice(0, MAX_RECORDED_INTERACTION_IDS);
+
+    // Spec 15: correct answer moves to application (practicing), incorrect
+    // moves back to misconception diagnosis. Only while learning mode is on.
+    if (this.state.enabled) {
+      this.state.phase = nextPhase(this.state.phase, {
+        type: "attempt_recorded",
+        outcome: input.outcome
+      });
+    }
 
     this.notifyChange();
     return summary;

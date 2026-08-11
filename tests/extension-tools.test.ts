@@ -590,4 +590,111 @@ describe("learning tools", () => {
       process.removeListener("unhandledRejection", onUnhandled);
     }
   });
+
+  it("returns a structured skipped result when the learner skips a single choice", async () => {
+    const present = vi.fn().mockResolvedValue({
+      interactionId: "q_skipped",
+      type: "single_choice",
+      skipped: true,
+      responseTimeMs: 123
+    });
+    const tool = createAskSingleChoiceTool({ present });
+
+    const result = await tool.execute(
+      "tool_call_1",
+      {
+        question: "Skip me?",
+        options: [
+          { id: "A", label: "First" },
+          { id: "B", label: "Second" }
+        ],
+        allowSkip: true,
+        conceptId: "rust-generics"
+      },
+      undefined,
+      undefined,
+      { hasUI: false } as unknown as ExtensionContext
+    );
+
+    expect(result).toEqual({
+      content: [
+        {
+          type: "text",
+          text: "Learner skipped the question (interaction q_skipped)."
+        }
+      ],
+      details: {
+        interactionId: "q_skipped",
+        type: "single_choice",
+        skipped: true,
+        responseTimeMs: 123,
+        conceptId: "rust-generics"
+      }
+    });
+  });
+
+  it("returns a structured skipped result for a skipped multi choice", async () => {
+    const present = vi.fn().mockResolvedValue({
+      interactionId: "q_skipped_multi",
+      type: "multi_choice",
+      skipped: true,
+      responseTimeMs: 321
+    });
+    const tool = createAskMultiChoiceTool({ present });
+
+    const result = await tool.execute(
+      "tool_call_1",
+      {
+        question: "Pick none.",
+        options: [
+          { id: "A", label: "First" },
+          { id: "B", label: "Second" }
+        ],
+        allowSkip: true
+      },
+      undefined,
+      undefined,
+      { hasUI: false } as unknown as ExtensionContext
+    );
+
+    expect(result).toMatchObject({
+      content: [
+        {
+          type: "text",
+          text: "Learner skipped the question (interaction q_skipped_multi)."
+        }
+      ],
+      details: {
+        interactionId: "q_skipped_multi",
+        type: "multi_choice",
+        skipped: true,
+        responseTimeMs: 321
+      }
+    });
+  });
+
+  it("routes a TUI skip through broker.skip so the web client sees the resolution", async () => {
+    const broker = new InteractionBroker();
+    const select = vi.fn().mockResolvedValue("跳过此题");
+    const ctx = {
+      hasUI: true,
+      ui: { select }
+    } as unknown as ExtensionContext;
+    const presenter = createBrokerBackedTuiPresenter(broker, () => 1_500);
+    const interaction = {
+      id: "q_tui_skip",
+      type: "single_choice" as const,
+      question: "Skip?",
+      options: [{ id: "A", label: "A" }],
+      allowSkip: true,
+      createdAt: 1_000
+    };
+
+    const answerPromise = presenter.presentSingleChoice(interaction, undefined, ctx);
+
+    const answer = await answerPromise;
+    expect(answer).toMatchObject({ skipped: true });
+    expect(broker.getPending()).toEqual([]);
+    expect(broker.hasResolved(interaction.id)).toBe(true);
+  });
 });

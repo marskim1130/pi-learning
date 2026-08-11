@@ -43,6 +43,7 @@ npm run pi
 - `/learn-status`：显示课程、主题、教学阶段和 pending interaction。
 - `/learn-open`：在浏览器中打开学习工作台（含 token 的 workspace URL）。
 - `/learn-stop`：停止 Learning Mode，并取消所有等待中的 Broker interaction。
+- `/learn-reset`：重置当前主题的 learner state（概念 / 掌握度 / 答题历史，带确认），保留课程与主题。
 
 当前命令解析规则把第一个单词视为课程，其余内容视为主题。例如：
 
@@ -144,7 +145,7 @@ Pi Extension entry
 ## 已知限制
 
 - 当前实现覆盖规格 Milestone 0-7 主体（TUI + Web 往返闭环 + MultiChoice + mastery + 流式 transcript/Markdown/KaTeX + readOnlyRanges + 组件单测）。未完成项：Monaco Language Server、真正隔离的代码 runner、跨 session 长期 learner profile（SQLite）、TUI 原生多选组件。
-- `allowSkip` 已进入单选/多选 interaction 协议，但本阶段没有定义结构化 skip answer，因此不展示 Skip 选项。
+- `allowSkip` 的完整闭环已实现：Web 与 TUI 单选/多选均可跳过，答案以 `skipped: true` 的结构化结果返回模型（`POST /api/interactions/:id/skip`）。
 - TUI 模式的代码/多行回答使用可响应 AbortSignal 的 `ctx.ui.custom()` 编辑器；非 TUI 模式仍受 Pi `ctx.ui.editor()` 不接受 AbortSignal 的限制。
 - TUI 多选是逐项循环选择 + "✔ 完成"（pi-tui 无多选组件）；Web 端是完整 checkbox 交互。
 - `/learn` 的文档签名与课程/多词主题存在歧义；本阶段采用首词为课程、剩余文本为主题的规则，以满足 `rust generics` 验收场景。

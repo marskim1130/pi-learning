@@ -108,7 +108,7 @@ describe("LearningServer QA scenarios", () => {
   it("rejects unknown API paths with 404", async () => {
     const r1 = await fetch(`${origin}/api/events/extra`, { headers });
     expect(r1.status).toBe(404);
-    const r2 = await fetch(`${origin}/api/interactions/q_skip/skip`, {
+    const r2 = await fetch(`${origin}/api/interactions/q_x/unknown-action`, {
       method: "POST",
       headers,
       body: "{}"

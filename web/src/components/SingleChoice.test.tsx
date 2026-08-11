@@ -16,7 +16,7 @@ vi.mock("../api/client", () => ({
   describeSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : "提交失败，请重试。",
   describeRunError: () => "运行失败，请重试。",
-  client: { submit: vi.fn(), runCode: vi.fn() }
+  client: { submit: vi.fn(), skip: vi.fn(), runCode: vi.fn() }
 }));
 
 const interaction: SingleChoiceInteraction = {
@@ -33,6 +33,7 @@ const interaction: SingleChoiceInteraction = {
 };
 
 const submit = vi.mocked(client.submit);
+const skip = vi.mocked(client.skip);
 
 beforeEach(() => {
   submit.mockReset();
@@ -42,6 +43,16 @@ beforeEach(() => {
       interactionId: "sc_1",
       type: "single_choice",
       answer: { optionId: "A" },
+      responseTimeMs: 5
+    }
+  });
+  skip.mockReset();
+  skip.mockResolvedValue({
+    ok: true,
+    answer: {
+      interactionId: "sc_1",
+      type: "single_choice",
+      skipped: true,
       responseTimeMs: 5
     }
   });
@@ -111,5 +122,24 @@ describe("SingleChoice", () => {
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith("sc_1", { optionId: "B" })
     );
+  });
+
+  it("hides the skip button unless allowSkip is set", () => {
+    render(<SingleChoice interaction={interaction} />);
+    expect(screen.queryByRole("button", { name: "跳过此题" })).toBeNull();
+  });
+
+  it("shows the skip button and posts a structured skip when allowSkip is set", async () => {
+    render(<SingleChoice interaction={{ ...interaction, allowSkip: true }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "跳过此题" }));
+
+    await waitFor(() => expect(skip).toHaveBeenCalledWith("sc_1"));
+    expect(submit).not.toHaveBeenCalled();
+    // 跳过提交后组件同样锁定。
+    expect(
+      (screen.getByRole("button", { name: "跳过此题" }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
   });
 });

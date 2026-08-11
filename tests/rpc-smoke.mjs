@@ -25,8 +25,8 @@ try {
   const stderr = client.getStderr();
   const crash = /unhandledRejection|Unhandled/i.test(stderr) ? stderr.slice(-500) : "";
   console.log("unhandledRejection:", crash === "" ? "none" : crash);
-  if (learning.length !== 4) {
-    throw new Error(`expected 4 learning commands, got ${learning.length}`);
+  if (learning.length !== 5) {
+    throw new Error(`expected 5 learning commands, got ${learning.length}`);
   }
   if (crash !== "") {
     throw new Error("unhandledRejection detected in stderr");

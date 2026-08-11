@@ -398,4 +398,194 @@ describe("InteractionBroker", () => {
       interactionId: "q_listener_boom"
     });
   });
+
+  it("composes same-key listeners across subscribe calls (SSE + phase hook coexist)", async () => {
+    const broker = new InteractionBroker();
+    // LearningServer (constructor subscribe) then index.ts wiring (subscribe):
+    // both onPresented handlers must fire, not replace each other.
+    const serverOnPresented = vi.fn();
+    const stateOnPresented = vi.fn();
+    broker.subscribe({ onPresented: serverOnPresented });
+    broker.subscribe({ onPresented: stateOnPresented });
+    const interaction = {
+      id: "q_two_subscribers",
+      type: "single_choice" as const,
+      question: "Two subscribers",
+      options: [{ id: "A", label: "Answer" }],
+      allowSkip: false,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+
+    expect(serverOnPresented).toHaveBeenCalledWith(interaction);
+    expect(stateOnPresented).toHaveBeenCalledWith(interaction);
+    expect(broker.submit({
+      interactionId: interaction.id,
+      answer: { optionId: "A" },
+      clientTimestamp: 1_100
+    }).ok).toBe(true);
+    await expect(answerPromise).resolves.toMatchObject({
+      interactionId: "q_two_subscribers"
+    });
+  });
+
+  it("composes resolved listeners so both the SSE broadcast and bookkeeping fire", async () => {
+    const broker = new InteractionBroker();
+    const first = vi.fn();
+    const second = vi.fn();
+    broker.subscribe({ onResolved: first });
+    broker.subscribe({ onResolved: second });
+    const interaction = {
+      id: "q_resolved_twice",
+      type: "single_choice" as const,
+      question: "Resolved twice",
+      options: [{ id: "A", label: "Answer" }],
+      allowSkip: false,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+    broker.submit({
+      interactionId: interaction.id,
+      answer: { optionId: "A" },
+      clientTimestamp: 1_100
+    });
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    await expect(answerPromise).resolves.toMatchObject({
+      interactionId: "q_resolved_twice"
+    });
+  });
+
+  it("resolves a pending choice as a structured skip when allowSkip is set", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_500);
+    const broker = new InteractionBroker();
+    const interaction = {
+      id: "q_skip_ok",
+      type: "single_choice" as const,
+      question: "Skip me?",
+      options: [{ id: "A", label: "No" }],
+      allowSkip: true,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+
+    const result = broker.skip(interaction.id);
+
+    expect(result).toEqual({
+      ok: true,
+      answer: {
+        interactionId: "q_skip_ok",
+        type: "single_choice",
+        skipped: true,
+        responseTimeMs: 500
+      }
+    });
+    await expect(answerPromise).resolves.toMatchObject({ skipped: true });
+    expect(broker.getPending()).toEqual([]);
+    expect(broker.hasResolved(interaction.id)).toBe(true);
+  });
+
+  it("skips a multi_choice with the matching type", async () => {
+    const broker = new InteractionBroker();
+    const interaction = {
+      id: "q_skip_multi",
+      type: "multi_choice" as const,
+      question: "Pick none.",
+      options: [{ id: "A", label: "A" }],
+      allowSkip: true,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+
+    const result = broker.skip(interaction.id);
+
+    expect(result).toEqual({
+      ok: true,
+      answer: expect.objectContaining({
+        type: "multi_choice",
+        skipped: true
+      })
+    });
+    await expect(answerPromise).resolves.toMatchObject({ type: "multi_choice" });
+  });
+
+  it("rejects a skip when the interaction does not allow skipping", async () => {
+    const broker = new InteractionBroker();
+    const interaction = {
+      id: "q_skip_denied",
+      type: "single_choice" as const,
+      question: "Must answer.",
+      options: [{ id: "A", label: "A" }],
+      allowSkip: false,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+
+    expect(broker.skip(interaction.id)).toEqual({
+      ok: false,
+      reason: "skip_not_allowed",
+      message: `Interaction ${interaction.id} does not allow skipping.`
+    });
+    // The interaction stays pending: the learner can still answer it.
+    expect(broker.getPending()).toEqual([interaction]);
+    expect(broker.submit({
+      interactionId: interaction.id,
+      answer: { optionId: "A" },
+      clientTimestamp: 1_100
+    }).ok).toBe(true);
+    await expect(answerPromise).resolves.toMatchObject({ answer: { optionId: "A" } });
+  });
+
+  it("rejects a skip for an unknown or already-resolved interaction", async () => {
+    const broker = new InteractionBroker();
+    const interaction = {
+      id: "q_skip_twice",
+      type: "single_choice" as const,
+      question: "Skip?",
+      options: [{ id: "A", label: "A" }],
+      allowSkip: true,
+      createdAt: 1_000
+    };
+    void broker.present(interaction);
+
+    expect(broker.skip("q_unknown")).toEqual({
+      ok: false,
+      reason: "not_found",
+      message: "No pending interaction with id q_unknown."
+    });
+    expect(broker.skip(interaction.id).ok).toBe(true);
+    expect(broker.skip(interaction.id)).toEqual({
+      ok: false,
+      reason: "already_resolved",
+      message: `Interaction ${interaction.id} has already been resolved.`
+    });
+  });
+
+  it("rejects answering an interaction that was skipped", async () => {
+    const broker = new InteractionBroker();
+    const interaction = {
+      id: "q_skip_then_submit",
+      type: "single_choice" as const,
+      question: "Skip?",
+      options: [{ id: "A", label: "A" }],
+      allowSkip: true,
+      createdAt: 1_000
+    };
+    const answerPromise = broker.present(interaction);
+    expect(broker.skip(interaction.id).ok).toBe(true);
+
+    expect(
+      broker.submit({
+        interactionId: interaction.id,
+        answer: { optionId: "A" },
+        clientTimestamp: 1_100
+      })
+    ).toEqual({
+      ok: false,
+      reason: "already_resolved",
+      message: `Interaction ${interaction.id} has already been resolved.`
+    });
+    await expect(answerPromise).resolves.toMatchObject({ skipped: true });
+  });
 });

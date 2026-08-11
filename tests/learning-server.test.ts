@@ -671,4 +671,81 @@ describe("LearningServer HTTP API", () => {
       await failingServer.close();
     }
   });
+
+  it("accepts a skip for an allowSkip interaction and resolves it as skipped", async () => {
+    const interaction = { ...singleChoiceInteraction("q_skip"), allowSkip: true };
+    void broker.present(interaction);
+    const response = await fetch(`${origin}/api/interactions/q_skip/skip`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ interactionId: "q_skip" })
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      answer: {
+        interactionId: "q_skip",
+        type: "single_choice",
+        skipped: true
+      }
+    });
+    expect(broker.getPending()).toEqual([]);
+  });
+
+  it("rejects a skip for an interaction without allowSkip", async () => {
+    void broker.present(singleChoiceInteraction("q_no_skip"));
+    const response = await fetch(`${origin}/api/interactions/q_no_skip/skip`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ interactionId: "q_no_skip" })
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      reason: "skip_not_allowed"
+    });
+    // The interaction stays answerable.
+    expect(broker.getPending().map((p) => p.id)).toEqual(["q_no_skip"]);
+  });
+
+  it("rejects a skip whose interactionId does not match the URL", async () => {
+    void broker.present(singleChoiceInteraction("q_skip_mismatch"));
+    const response = await fetch(
+      `${origin}/api/interactions/q_skip_mismatch/skip`,
+      {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ interactionId: "other" })
+      }
+    );
+    expect(response.status).toBe(400);
+    expect(broker.getPending().map((p) => p.id)).toEqual(["q_skip_mismatch"]);
+  });
+
+  it("returns 404 for a skip of an unknown interaction", async () => {
+    const response = await fetch(`${origin}/api/interactions/q_unknown/skip`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ interactionId: "q_unknown" })
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 409 for a second skip of an already-resolved interaction", async () => {
+    const interaction = { ...singleChoiceInteraction("q_skip_twice"), allowSkip: true };
+    void broker.present(interaction);
+    const first = await fetch(`${origin}/api/interactions/q_skip_twice/skip`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ interactionId: "q_skip_twice" })
+    });
+    expect(first.status).toBe(200);
+
+    const second = await fetch(`${origin}/api/interactions/q_skip_twice/skip`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ interactionId: "q_skip_twice" })
+    });
+    expect(second.status).toBe(409);
+  });
 });

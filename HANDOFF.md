@@ -31,6 +31,8 @@
 
 - 四个 `learning_ask_*` 工具均以 sequential 模式等待结构化答案。
 - `learning_record_attempt` 只接受 Broker 已 resolved 的 ID；同一 ID 最多记录一次。
+- 跳过（allowSkip）走 `broker.skip` / `POST /api/interactions/:id/skip`，以 `skipped: true` 结构化结果返回，不进入 submit 校验；`/learn-reset` 经 `ctx.ui.confirm` 确认后清空当前 topic 的 concepts/attempts/幂等账本。
+- phase 迁移由 `nextPhase` 纯函数驱动：出题使 explaining→checking，record_attempt 使 correct→practicing、incorrect→diagnosing。
 - LearningState 使用 Pi custom entry 按 active branch 恢复；空 branch 会重置状态。
 - server 只监听 `127.0.0.1`，API 使用 bearer token，SSE 因 EventSource 限制允许 query token。
 - Markdown/KaTeX 只在 `MathText` 的 HTML 边界渲染并清洗。
@@ -58,12 +60,11 @@ npm audit --omit=dev
 
 ## 已知未完成项
 
-- `/learn-reset` 的确认与重置语义尚未实现。
-- `allowSkip` 已在协议中，但缺少统一的结构化 skip answer，因此 UI 暂不显示 Skip。
-- phase 仍缺少一套明确、可验证的应用层迁移规则；规格只给推荐循环，实施前需确定触发条件。
-- Monaco Language Server、长期跨 session learner profile、TUI 原生多选组件尚未实现。
+- 本轮已完成：`/learn-reset`（确认 + 重置当前主题 learner state，保留 course/topic）；`allowSkip` 全链路结构化 skip（broker.skip、`POST /api/interactions/:id/skip`、Web/TUI Skip 按钮、tool result 返回 `skipped: true`）；phase 应用层迁移规则（`nextPhase` 纯函数：start→diagnosing、explain 后出题→checking、correct→practicing、incorrect→diagnosing，由 /learn、broker.onPresented、learning_record_attempt 触发）。
+- Monaco Language Server、长期跨 session learner profile（SQLite）、TUI 原生多选组件尚未实现。
 - 真正隔离的代码运行需要 OS/container 级 CPU、内存、网络和进程树限制。
 - MathText 对转义美元符号和代码块内数学分隔符仍有边缘限制。
+- `reviewing` phase 目前没有自动触发事件（无 /learn-review），只能经持久化恢复保留。
 
 ## 关键文件
 

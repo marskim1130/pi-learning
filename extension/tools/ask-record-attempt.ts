@@ -43,7 +43,7 @@ export function createAskRecordAttemptTool(
     name: "learning_record_attempt",
     label: "Learning: Record Attempt",
     description:
-      "Record the learner's attempt on a concept after evaluating it. Use this to update mastery when the learner answered a learning_ask_* question (or any exercise), instead of describing the outcome in prose.",
+      "Record the learner's attempt on a concept after evaluating it. Use this to update mastery when the learner answered a learning_ask_* question (or any exercise), instead of describing the outcome in prose. Do NOT record attempts for interactions whose tool result says skipped: true — a skipped question is not an answer.",
     promptSnippet: "Record the learner's attempt and update concept mastery",
     parameters,
     async execute(_toolCallId, params) {

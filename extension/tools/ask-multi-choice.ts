@@ -6,11 +6,11 @@ import { Type } from "typebox";
 
 import type {
   MultiChoiceAnswer,
-  MultiChoiceInteraction,
-  MultiChoiceResolvedAnswer
+  MultiChoiceInteraction
 } from "../server/protocol.js";
 import { createInteractionId } from "../utils/ids.js";
 import { presentMultiChoiceInTui } from "./tui-presenter.js";
+import type { MultiChoiceResolvedAnswerOrSkip } from "./tui-presenter.js";
 
 const parameters = Type.Object({
   title: Type.Optional(Type.String({ minLength: 1 })),
@@ -26,13 +26,14 @@ const parameters = Type.Object({
   allowSkip: Type.Optional(Type.Boolean())
 });
 
-export interface MultiChoiceToolDetails extends MultiChoiceResolvedAnswer {
-  interactionId: string;
-  type: "multi_choice";
-  answer: MultiChoiceAnswer;
-  responseTimeMs: number;
-  conceptId?: string;
-}
+/**
+ * Answered or skipped (spec 7.5): a skipped interaction carries
+ * `skipped: true` and no answer.
+ */
+export type MultiChoiceToolDetails = (
+  | { interactionId: string; type: "multi_choice"; answer: MultiChoiceAnswer; responseTimeMs: number }
+  | { interactionId: string; type: "multi_choice"; skipped: true; responseTimeMs: number }
+) & { conceptId?: string };
 
 export interface MultiChoiceToolDependencies {
   createId?: () => string;
@@ -44,7 +45,7 @@ export type MultiChoicePresenter = (
   interaction: MultiChoiceInteraction,
   signal: AbortSignal | undefined,
   ctx: ExtensionContext
-) => Promise<MultiChoiceResolvedAnswer>;
+) => Promise<MultiChoiceResolvedAnswerOrSkip>;
 
 export function createAskMultiChoiceTool(
   dependencies: MultiChoiceToolDependencies = {}
@@ -61,7 +62,7 @@ export function createAskMultiChoiceTool(
     name: "learning_ask_multi_choice",
     label: "Learning: Multi Choice",
     description:
-      "Ask the learner a multi-choice question (one or more answers may be correct) and wait for their structured answer.",
+      "Ask the learner a multi-choice question (one or more answers may be correct) and wait for their structured answer. allowSkip lets the learner decline without answering.",
     promptSnippet: "Ask a structured multi-choice learning question",
     executionMode: "sequential",
     parameters,
@@ -79,10 +80,13 @@ export function createAskMultiChoiceTool(
           : { conceptId: params.conceptId })
       };
       const resolved = await present(interaction, signal, ctx);
+      const skipped = "skipped" in resolved;
       const details: MultiChoiceToolDetails = {
         interactionId: resolved.interactionId,
-        type: resolved.type,
-        answer: resolved.answer,
+        type: "multi_choice",
+        ...(skipped
+          ? { skipped: true }
+          : { answer: resolved.answer }),
         responseTimeMs: resolved.responseTimeMs,
         ...(interaction.conceptId === undefined
           ? {}
@@ -93,7 +97,9 @@ export function createAskMultiChoiceTool(
         content: [
           {
             type: "text",
-            text: `Learner selected options ${resolved.answer.optionIds.join(", ")} (interaction ${resolved.interactionId}).`
+            text: skipped
+              ? `Learner skipped the question (interaction ${resolved.interactionId}).`
+              : `Learner selected options ${resolved.answer.optionIds.join(", ")} (interaction ${resolved.interactionId}).`
           }
         ],
         details

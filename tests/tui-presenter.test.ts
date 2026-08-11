@@ -252,6 +252,62 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
     expect(broker.getPending()).toEqual([]);
   });
 
+  it("routes a broker skip (web client) back as a structured skipped answer", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(5_100);
+    const broker = new InteractionBroker();
+    const select = vi.fn();
+    const ctx = { hasUI: false, ui: { select } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => true);
+    const interaction = singleChoice("web_skipped");
+
+    const answerPromise = presenter.presentSingleChoice(
+      interaction,
+      undefined,
+      ctx
+    );
+    expect(select).not.toHaveBeenCalled();
+
+    expect(broker.skip(interaction.id).ok).toBe(true);
+
+    const answer = await answerPromise;
+    expect(answer).toEqual({
+      interactionId: interaction.id,
+      type: "single_choice",
+      skipped: true,
+      responseTimeMs: 100
+    });
+    expect(broker.getPending()).toEqual([]);
+  });
+
+  it("falls back to a TUI skip option when no web client is connected", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(5_100);
+    const broker = new InteractionBroker();
+    const select = vi.fn().mockResolvedValue("跳过此题");
+    const ctx = { hasUI: true, ui: { select } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => false);
+    const interaction = singleChoice("tui_skip");
+
+    const answer = await presenter.presentSingleChoice(
+      interaction,
+      undefined,
+      ctx
+    );
+
+    expect(select).toHaveBeenCalledWith(
+      "Question tui_skip",
+      ["1. First", "2. Second", "跳过此题"],
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    expect(answer).toEqual({
+      interactionId: interaction.id,
+      type: "single_choice",
+      skipped: true,
+      responseTimeMs: 100
+    });
+    expect(broker.getPending()).toEqual([]);
+    expect(broker.hasResolved(interaction.id)).toBe(true);
+  });
+
   it("web branch passes the tool abort signal through: pre-aborted signal rejects immediately", async () => {
     const broker = new InteractionBroker();
     const presenter = createModeAwarePresenter(broker, () => true);
@@ -292,7 +348,7 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
     expect(submitted.ok).toBe(true);
 
     const answer = await answerPromise;
-    expect(answer.answer).toEqual({ text: "Type params." });
+    expect(answer).toMatchObject({ answer: { text: "Type params." } });
     expect(broker.getPending()).toEqual([]);
   });
 
@@ -327,7 +383,7 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
     expect(submitted.ok).toBe(true);
 
     const answer = await answerPromise;
-    expect(answer.answer).toEqual({ optionIds: ["A", "C"] });
+    expect(answer).toMatchObject({ answer: { optionIds: ["A", "C"] } });
     expect(broker.getPending()).toEqual([]);
   });
 
@@ -346,10 +402,10 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
 
     expect(select).toHaveBeenCalledWith(
       "Question tui_fallback",
-      ["1. First", "2. Second"],
+      ["1. First", "2. Second", "跳过此题"],
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
-    expect(answer.answer).toEqual({ optionId: "B" });
+    expect(answer).toMatchObject({ answer: { optionId: "B" } });
     expect(broker.getPending()).toEqual([]);
   });
 
@@ -380,7 +436,7 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
       ctx
     );
     expect(select).toHaveBeenCalledTimes(1);
-    expect(second.answer).toEqual({ optionId: "A" });
+    expect(second).toMatchObject({ answer: { optionId: "A" } });
   });
 
   it("falls back to TUI when the web client disconnects while waiting", async () => {

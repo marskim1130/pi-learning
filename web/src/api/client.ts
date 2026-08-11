@@ -124,6 +124,20 @@ export const client = {
     );
   },
 
+  /** 规格 9.2：跳过题目（仅 allowSkip 的题目），返回结构化 skipped answer。 */
+  async skip(
+    interactionId: string
+  ): Promise<{ ok: true; answer: ResolvedAnswer }> {
+    return request<{ ok: true; answer: ResolvedAnswer }>(
+      `/api/interactions/${encodeURIComponent(interactionId)}/skip`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interactionId })
+      }
+    );
+  },
+
   /** 规格 25：本地自测运行，结果只回给学习者，不提交答案。 */
   async runCode(language: string, code: string): Promise<CodeRunResult> {
     const body = await request<{ ok: true; result: CodeRunResult }>(

@@ -103,6 +103,7 @@ describe("Pi extension loading", () => {
       expect([...extension!.commands.keys()].sort()).toEqual([
         "learn",
         "learn-open",
+        "learn-reset",
         "learn-status",
         "learn-stop"
       ]);

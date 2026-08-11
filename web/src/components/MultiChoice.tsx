@@ -1,6 +1,7 @@
 // 多选组件（规格 22）：checkbox 支持多选，明确提示“可能有多个正确答案”，
 // 提交前至少选一个（无 skip answer，故提交按钮在零选择时禁用），提交后锁定。
 // 键盘：空格切换聚焦选项（原生 checkbox 行为）、数字/字母键直接切换对应选项，Enter 提交。
+// allowSkip 时显示“跳过此题”（规格 7.5）。
 
 import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
@@ -70,6 +71,23 @@ export default function MultiChoice({
     }
   }
 
+  async function doSkip(): Promise<void> {
+    if (submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await client.skip(interaction.id);
+      useLearningWorkspace
+        .getState()
+        .submitSuccess(interaction, result.answer, "已跳过此题");
+    } catch (err) {
+      setError(describeSubmitError(err));
+      setSubmitting(false);
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     if (selected.size > 0 && !locked) {
@@ -117,6 +135,16 @@ export default function MultiChoice({
         >
           {submitting ? "提交中…" : "提交答案"}
         </button>
+        {interaction.allowSkip && (
+          <button
+            type="button"
+            className="skip"
+            disabled={locked}
+            onClick={() => void doSkip()}
+          >
+            跳过此题
+          </button>
+        )}
         <span className="muted hint">
           {selected.size > 0
             ? `已选 ${selected.size} 项`

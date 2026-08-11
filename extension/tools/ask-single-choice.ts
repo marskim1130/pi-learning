@@ -6,11 +6,11 @@ import { Type } from "typebox";
 
 import type {
   SingleChoiceAnswer,
-  SingleChoiceInteraction,
-  SingleChoiceResolvedAnswer
+  SingleChoiceInteraction
 } from "../server/protocol.js";
 import { createInteractionId } from "../utils/ids.js";
 import { presentSingleChoiceInTui } from "./tui-presenter.js";
+import type { ChoiceResolvedAnswer } from "./tui-presenter.js";
 
 const parameters = Type.Object({
   title: Type.Optional(Type.String({ minLength: 1 })),
@@ -26,13 +26,15 @@ const parameters = Type.Object({
   allowSkip: Type.Optional(Type.Boolean())
 });
 
-export interface SingleChoiceToolDetails extends SingleChoiceResolvedAnswer {
-  interactionId: string;
-  type: "single_choice";
-  answer: SingleChoiceAnswer;
-  responseTimeMs: number;
-  conceptId?: string;
-}
+/**
+ * Answered or skipped (spec 7.5): a skipped interaction carries
+ * `skipped: true` and no answer, so the model can tell a decline from a
+ * wrong answer.
+ */
+export type SingleChoiceToolDetails = (
+  | { interactionId: string; type: "single_choice"; answer: SingleChoiceAnswer; responseTimeMs: number }
+  | { interactionId: string; type: "single_choice"; skipped: true; responseTimeMs: number }
+) & { conceptId?: string };
 
 export interface SingleChoiceToolDependencies {
   createId?: () => string;
@@ -44,7 +46,7 @@ export type SingleChoicePresenter = (
   interaction: SingleChoiceInteraction,
   signal: AbortSignal | undefined,
   ctx: ExtensionContext
-) => Promise<SingleChoiceResolvedAnswer>;
+) => Promise<ChoiceResolvedAnswer>;
 
 export function createAskSingleChoiceTool(
   dependencies: SingleChoiceToolDependencies = {}
@@ -61,7 +63,7 @@ export function createAskSingleChoiceTool(
     name: "learning_ask_single_choice",
     label: "Learning: Single Choice",
     description:
-      "Ask the learner one single-choice question and wait for their structured answer.",
+      "Ask the learner one single-choice question and wait for their structured answer. allowSkip lets the learner decline without answering.",
     promptSnippet: "Ask a structured single-choice learning question",
     executionMode: "sequential",
     parameters,
@@ -79,10 +81,13 @@ export function createAskSingleChoiceTool(
           : { conceptId: params.conceptId })
       };
       const resolved = await present(interaction, signal, ctx);
+      const skipped = "skipped" in resolved;
       const details: SingleChoiceToolDetails = {
         interactionId: resolved.interactionId,
-        type: resolved.type,
-        answer: resolved.answer,
+        type: "single_choice",
+        ...(skipped
+          ? { skipped: true }
+          : { answer: resolved.answer }),
         responseTimeMs: resolved.responseTimeMs,
         ...(interaction.conceptId === undefined
           ? {}
@@ -93,7 +98,9 @@ export function createAskSingleChoiceTool(
         content: [
           {
             type: "text",
-            text: `Learner selected option ${resolved.answer.optionId} (interaction ${resolved.interactionId}).`
+            text: skipped
+              ? `Learner skipped the question (interaction ${resolved.interactionId}).`
+              : `Learner selected option ${resolved.answer.optionId} (interaction ${resolved.interactionId}).`
           }
         ],
         details

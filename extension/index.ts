@@ -30,6 +30,11 @@ export default function learningExtension(pi: ExtensionAPI): void {
   });
   server = new LearningServer({ broker, state });
 
+  // Spec 15: a presented question migrates explaining → checking.
+  broker.subscribe({
+    onPresented: () => state.questionPresented()
+  });
+
   registerLearningTools(pi, { broker, state, server });
   registerLearningCommands(pi, { state, broker, server });
   registerTutorPrompt(pi, { state });

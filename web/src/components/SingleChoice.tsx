@@ -1,5 +1,5 @@
 // 单选组件（规格 21）：点击只选中不提交，显式“提交答案”按钮，提交后锁定。
-// 键盘：1/2/3… 或 A/B/C/D 选择，Enter 提交。协议无 skip answer，故不渲染跳过按钮。
+// 键盘：1/2/3… 或 A/B/C/D 选择，Enter 提交。allowSkip 时显示“跳过此题”（规格 7.5）。
 
 import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
@@ -52,6 +52,23 @@ export default function SingleChoice({
     }
   }
 
+  async function doSkip(): Promise<void> {
+    if (submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await client.skip(interaction.id);
+      useLearningWorkspace
+        .getState()
+        .submitSuccess(interaction, result.answer, "已跳过此题");
+    } catch (err) {
+      setError(describeSubmitError(err));
+      setSubmitting(false);
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     if (selected !== null && !locked) {
@@ -95,6 +112,16 @@ export default function SingleChoice({
         >
           {submitting ? "提交中…" : "提交答案"}
         </button>
+        {interaction.allowSkip && (
+          <button
+            type="button"
+            className="skip"
+            disabled={locked}
+            onClick={() => void doSkip()}
+          >
+            跳过此题
+          </button>
+        )}
         <span className="muted hint">1/2/3… 或 A/B/C/D 选择，Enter 提交</span>
       </div>
     </form>

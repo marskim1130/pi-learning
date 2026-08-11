@@ -98,11 +98,24 @@ export interface CodeExerciseResolvedAnswer {
   responseTimeMs: number;
 }
 
+/**
+ * Structured skip answer (spec 7.5 allowSkip): the learner declined the
+ * question. Only single/multi choice interactions carry allowSkip; the type
+ * mirrors the pending interaction's type.
+ */
+export interface SkippedResolvedAnswer {
+  interactionId: string;
+  type: "single_choice" | "multi_choice";
+  skipped: true;
+  responseTimeMs: number;
+}
+
 export type ResolvedAnswer =
   | SingleChoiceResolvedAnswer
   | MultiChoiceResolvedAnswer
   | FreeResponseResolvedAnswer
-  | CodeExerciseResolvedAnswer;
+  | CodeExerciseResolvedAnswer
+  | SkippedResolvedAnswer;
 
 export interface InteractionSubmission {
   interactionId: string;
@@ -114,7 +127,7 @@ export type SubmitResult =
   | { ok: true; answer: ResolvedAnswer }
   | {
       ok: false;
-      reason: "not_found" | "already_resolved" | "invalid_answer";
+      reason: "not_found" | "already_resolved" | "invalid_answer" | "skip_not_allowed";
       message: string;
     };
 

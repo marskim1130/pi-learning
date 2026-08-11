@@ -272,6 +272,14 @@ export class LearningServer {
       return;
     }
 
+    // 规格 9.2：跳过题目（仅 allowSkip 的题目）。与 submit 一样走 broker
+    // 解析，返回结构化 skipped answer（规格 7.5）。
+    const skipMatch = /^\/api\/interactions\/([^/]+)\/skip$/u.exec(pathname);
+    if (method === "POST" && skipMatch !== null) {
+      await this.handleSkip(request, response, skipMatch[1] ?? "");
+      return;
+    }
+
     // 规格 25：只有宿主显式注入 runner 时才开放。临时目录、env 白名单、
     // 超时和输出截断都不是安全沙箱，因此正式扩展默认返回 403。结果只回给
     // 学习者自测，不进入 learning_ask_code 的 tool result。
@@ -429,6 +437,80 @@ export class LearningServer {
       clientTimestamp: body.clientTimestamp
     };
     const result = this.broker.submit(submission);
+    if (!result.ok) {
+      const status =
+        result.reason === "not_found"
+          ? 404
+          : result.reason === "already_resolved"
+            ? 409
+            : 400;
+      sendJson(response, status, {
+        ok: false,
+        reason: result.reason,
+        message: result.message
+      });
+      return;
+    }
+
+    sendJson(response, 200, { ok: true, answer: result.answer });
+  }
+
+  /**
+   * POST /api/interactions/:id/skip (spec 9.2): learner declines the question.
+   * Body: { interactionId } (no answer). Delegate to broker.skip so the
+   * pending tool promise resolves with a structured skipped answer.
+   */
+  private async handleSkip(
+    request: IncomingMessage,
+    response: ServerResponse,
+    rawPathId: string
+  ): Promise<void> {
+    let interactionId: string;
+    try {
+      interactionId = decodeURIComponent(rawPathId);
+    } catch {
+      sendJson(response, 400, { ok: false, message: "Invalid interaction id." });
+      return;
+    }
+    if (interactionId === "") {
+      sendJson(response, 400, { ok: false, message: "Invalid interaction id." });
+      return;
+    }
+
+    let rawBody: string;
+    try {
+      rawBody = await readBody(request);
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        sendJson(response, 413, { ok: false, message: "Request body too large." });
+        return;
+      }
+      throw error;
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody) as unknown;
+    } catch {
+      sendJson(response, 400, {
+        ok: false,
+        message: "Request body must be valid JSON."
+      });
+      return;
+    }
+    if (!isRecord(body)) {
+      sendJson(response, 400, { ok: false, message: "Request body must be a JSON object." });
+      return;
+    }
+    if (body.interactionId !== interactionId) {
+      sendJson(response, 400, {
+        ok: false,
+        message: "interactionId does not match the URL."
+      });
+      return;
+    }
+
+    const result = this.broker.skip(interactionId);
     if (!result.ok) {
       const status =
         result.reason === "not_found"

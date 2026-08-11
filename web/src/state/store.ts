@@ -351,6 +351,9 @@ function upsertSubmitted(
 }
 
 function describeResolvedAnswer(answer: ResolvedAnswer): string {
+  if ("skipped" in answer) {
+    return "已跳过此题";
+  }
   switch (answer.type) {
     case "single_choice":
       return answer.answer.optionId;
@@ -382,6 +385,13 @@ function isResolvedAnswer(value: unknown): value is ResolvedAnswer {
     return false;
   }
   const record = value as Record<string, unknown>;
+  if (record.skipped === true) {
+    return (
+      typeof record.interactionId === "string" &&
+      (record.type === "single_choice" || record.type === "multi_choice") &&
+      typeof record.responseTimeMs === "number"
+    );
+  }
   return (
     typeof record.interactionId === "string" &&
     (record.type === "single_choice" ||

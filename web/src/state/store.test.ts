@@ -227,6 +227,33 @@ describe("web workspace store SSE handling", () => {
     expect(state.pending).toEqual([]);
   });
 
+  it("skipped resolved event removes the pending interaction and records 已跳过 in the transcript", () => {
+    const interaction = { ...singleChoice("sse_skip"), allowSkip: true };
+    useLearningWorkspace.getState().connect();
+    const es = FakeEventSource.last();
+    expect(es).not.toBeNull();
+
+    es?.dispatch("interaction.presented", { interaction });
+    expect(useLearningWorkspace.getState().pending).toEqual([interaction]);
+
+    const skipped: ResolvedAnswer = {
+      interactionId: interaction.id,
+      type: "single_choice",
+      skipped: true,
+      responseTimeMs: 7
+    };
+    es?.dispatch("interaction.resolved", {
+      interactionId: interaction.id,
+      answer: skipped
+    });
+
+    const state = useLearningWorkspace.getState();
+    expect(state.pending).toEqual([]);
+    expect(state.transcript).toHaveLength(1);
+    expect(state.transcript[0]?.kind).toBe("submitted");
+    expect(state.transcript[0]?.answerText).toBe("已跳过此题");
+  });
+
   it("reopening SSE replaces the old EventSource instead of stacking listeners", () => {
     useLearningWorkspace.getState().connect(); // 第一次连接
     const es1 = FakeEventSource.last();

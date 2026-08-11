@@ -2,6 +2,7 @@ import type {
   InteractionSubmission,
   LearningInteraction,
   ResolvedAnswer,
+  SkippedResolvedAnswer,
   SubmitResult
 } from "./protocol.js";
 import { validateInteractionAnswer } from "../utils/validation.js";
@@ -49,9 +50,30 @@ export class InteractionBroker {
     this.listeners = listeners;
   }
 
-  /** Attach additional listeners (used by LearningServer after construction). */
+  /**
+   * Attach additional listeners (used by LearningServer after construction).
+   * Same-key listeners compose: an earlier onPresented keeps firing when a
+   * later one is added, so the SSE broadcast and the phase migration hook can
+   * coexist on one broker.
+   */
   subscribe(listeners: BrokerListeners): void {
-    this.listeners = { ...this.listeners, ...listeners };
+    const onPresented = compose(
+      this.listeners.onPresented,
+      listeners.onPresented
+    );
+    const onResolved = compose(
+      this.listeners.onResolved,
+      listeners.onResolved
+    );
+    const onCancelled = compose(
+      this.listeners.onCancelled,
+      listeners.onCancelled
+    );
+    this.listeners = {
+      ...(onPresented === undefined ? {} : { onPresented }),
+      ...(onResolved === undefined ? {} : { onResolved }),
+      ...(onCancelled === undefined ? {} : { onCancelled })
+    };
   }
 
   present(
@@ -170,6 +192,56 @@ export class InteractionBroker {
     return { ok: true, answer };
   }
 
+  /**
+   * Skip a pending interaction (spec 7.5 allowSkip). Resolves the pending
+   * promise with a SkippedResolvedAnswer so the tool result stays structured;
+   * rejects (skip_not_allowed) when the interaction does not allow skipping.
+   */
+  skip(interactionId: string): SubmitResult {
+    const pending = this.pending.get(interactionId);
+    if (!pending) {
+      if (this.resolvedIds.has(interactionId)) {
+        return {
+          ok: false,
+          reason: "already_resolved",
+          message: `Interaction ${interactionId} has already been resolved.`
+        };
+      }
+
+      return {
+        ok: false,
+        reason: "not_found",
+        message: `No pending interaction with id ${interactionId}.`
+      };
+    }
+
+    // Only single/multi choice carry allowSkip (spec 7.5); free response and
+    // code exercises cannot be skipped.
+    if (!("allowSkip" in pending.interaction && pending.interaction.allowSkip)) {
+      return {
+        ok: false,
+        reason: "skip_not_allowed",
+        message: `Interaction ${interactionId} does not allow skipping.`
+      };
+    }
+
+    const answer: SkippedResolvedAnswer = {
+      interactionId: pending.interaction.id,
+      type:
+        pending.interaction.type === "multi_choice"
+          ? "multi_choice"
+          : "single_choice",
+      skipped: true,
+      responseTimeMs: Math.max(0, Date.now() - pending.interaction.createdAt)
+    };
+    this.pending.delete(interactionId);
+    pending.cleanup();
+    this.rememberResolved(interactionId);
+    pending.resolve(answer);
+    notifyListener(() => this.listeners.onResolved?.(answer));
+    return { ok: true, answer };
+  }
+
   cancel(interactionId: string, reason: string): void {
     this.rejectPending(
       interactionId,
@@ -223,6 +295,28 @@ export class InteractionBroker {
       );
     }
   }
+}
+
+/**
+ * Compose two optional listeners into one: both fire in registration order.
+ * Used by subscribe so multiple subscribers share one broker (server SSE +
+ * state phase hooks). Throwing listeners are already contained by the
+ * notifyListener wrapper at the call sites.
+ */
+function compose<A extends unknown[]>(
+  first: ((...args: A) => void) | undefined,
+  second: ((...args: A) => void) | undefined
+): ((...args: A) => void) | undefined {
+  if (first === undefined) {
+    return second;
+  }
+  if (second === undefined) {
+    return first;
+  }
+  return (...args: A) => {
+    first(...args);
+    second(...args);
+  };
 }
 
 /** Listeners are observability hooks: a throwing listener must not break the broker. */

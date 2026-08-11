@@ -88,6 +88,31 @@ export function registerLearningCommands(
       ctx.ui.notify("Learning Mode disabled.", "info");
     }
   });
+
+  pi.registerCommand("learn-reset", {
+    description: "Reset the current topic's learner state (requires confirmation)",
+    handler: async (_args, ctx) => {
+      const snapshot = state.snapshot();
+      if (!snapshot.enabled || snapshot.topic === undefined) {
+        ctx.ui.notify("No active learning topic to reset.", "warning");
+        return;
+      }
+      const confirmed = await ctx.ui.confirm(
+        "Reset learner state?",
+        `This clears all concepts, mastery and attempt history for "${snapshot.topic.title}". It cannot be undone.`
+      );
+      if (!confirmed) {
+        ctx.ui.notify("Reset cancelled.", "info");
+        return;
+      }
+      state.resetTopic();
+      dependencies.broker.cancelAll("learning_reset");
+      ctx.ui.notify(
+        `Learner state for "${snapshot.topic.title}" has been reset.`,
+        "info"
+      );
+    }
+  });
 }
 
 export function formatLearningStatus(

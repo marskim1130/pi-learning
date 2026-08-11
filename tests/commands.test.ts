@@ -270,4 +270,146 @@ describe("learning commands", () => {
       phase: "idle"
     });
   });
+
+  it("warns instead of resetting when no active learning topic exists", async () => {
+    const commands = new Map<
+      string,
+      Omit<RegisteredCommand, "name" | "sourceInfo">
+    >();
+    const pi = {
+      registerCommand: (
+        name: string,
+        command: Omit<RegisteredCommand, "name" | "sourceInfo">
+      ) => commands.set(name, command)
+    } as unknown as ExtensionAPI;
+    const state = new LearningStateStore();
+    const notify = vi.fn();
+    registerLearningCommands(pi, {
+      state,
+      broker: new InteractionBroker(),
+      server: createServerMock() as unknown as LearningServer,
+      openWorkspace: vi.fn()
+    });
+
+    await commands.get("learn-reset")?.handler("", {
+      ui: { notify }
+    } as unknown as ExtensionCommandContext);
+
+    expect(notify).toHaveBeenCalledWith(
+      "No active learning topic to reset.",
+      "warning"
+    );
+  });
+
+  it("keeps the state when the reset confirmation is declined", async () => {
+    const commands = new Map<
+      string,
+      Omit<RegisteredCommand, "name" | "sourceInfo">
+    >();
+    const pi = {
+      registerCommand: (
+        name: string,
+        command: Omit<RegisteredCommand, "name" | "sourceInfo">
+      ) => commands.set(name, command)
+    } as unknown as ExtensionAPI;
+    const state = new LearningStateStore();
+    state.start({
+      course: { id: "rust", title: "Rust" },
+      topic: { id: "generics", title: "Generics" }
+    });
+    state.recordAttempt({
+      interactionId: "q_1",
+      conceptId: "trait_bounds",
+      outcome: "correct",
+      evidenceType: "choice"
+    });
+    const broker = new InteractionBroker();
+    void broker.present({
+      id: "q_pending",
+      type: "single_choice",
+      question: "Pending",
+      options: [{ id: "A", label: "Answer" }],
+      allowSkip: false,
+      createdAt: 1_000
+    });
+    const notify = vi.fn();
+    const confirm = vi.fn().mockResolvedValue(false);
+    registerLearningCommands(pi, {
+      state,
+      broker,
+      server: createServerMock() as unknown as LearningServer,
+      openWorkspace: vi.fn()
+    });
+
+    await commands.get("learn-reset")?.handler("", {
+      ui: { notify, confirm }
+    } as unknown as ExtensionCommandContext);
+
+    expect(notify).toHaveBeenCalledWith("Reset cancelled.", "info");
+    expect(Object.keys(state.snapshot().concepts)).toHaveLength(1);
+    expect(broker.getPending()).toHaveLength(1);
+  });
+
+  it("resets the topic learner state after confirmation and cancels pending interactions", async () => {
+    const commands = new Map<
+      string,
+      Omit<RegisteredCommand, "name" | "sourceInfo">
+    >();
+    const pi = {
+      registerCommand: (
+        name: string,
+        command: Omit<RegisteredCommand, "name" | "sourceInfo">
+      ) => commands.set(name, command)
+    } as unknown as ExtensionAPI;
+    const state = new LearningStateStore();
+    state.start({
+      course: { id: "rust", title: "Rust" },
+      topic: { id: "generics", title: "Generics" }
+    });
+    state.recordAttempt({
+      interactionId: "q_1",
+      conceptId: "trait_bounds",
+      outcome: "correct",
+      evidenceType: "choice"
+    });
+    const broker = new InteractionBroker();
+    const pending = broker.present({
+      id: "q_pending",
+      type: "single_choice",
+      question: "Pending",
+      options: [{ id: "A", label: "Answer" }],
+      allowSkip: false,
+      createdAt: 1_000
+    });
+    const notify = vi.fn();
+    const confirm = vi.fn().mockResolvedValue(true);
+    registerLearningCommands(pi, {
+      state,
+      broker,
+      server: createServerMock() as unknown as LearningServer,
+      openWorkspace: vi.fn()
+    });
+
+    await commands.get("learn-reset")?.handler("", {
+      ui: { notify, confirm }
+    } as unknown as ExtensionCommandContext);
+
+    expect(confirm).toHaveBeenCalledWith(
+      "Reset learner state?",
+      expect.stringContaining("Generics")
+    );
+    expect(notify).toHaveBeenCalledWith(
+      expect.stringContaining("has been reset"),
+      "info"
+    );
+    const snapshot = state.snapshot();
+    expect(snapshot.enabled).toBe(true);
+    expect(snapshot.topic).toEqual({ id: "generics", title: "Generics" });
+    expect(snapshot.phase).toBe("diagnosing");
+    expect(snapshot.concepts).toEqual({});
+    expect(broker.getPending()).toEqual([]);
+    await expect(pending).rejects.toMatchObject({
+      name: "InteractionCancelledError"
+    });
+  });
 });
