@@ -85,7 +85,12 @@ describe("TUI custom editor presenter (ctx.mode === 'tui')", () => {
 
     const result = await resultPromise;
     expect(result).toEqual({
-      content: [{ type: "text", text: "Learner submitted code in rust." }],
+      content: [
+        {
+          type: "text",
+          text: "Learner submitted code in rust:\nfn identity<T>(value: T) -> T { value }"
+        }
+      ],
       details: {
         interactionId: "code_tui",
         type: "code",
@@ -376,5 +381,29 @@ describe("createModeAwarePresenter (uiMode auto)", () => {
     );
     expect(select).toHaveBeenCalledTimes(1);
     expect(second.answer).toEqual({ optionId: "A" });
+  });
+
+  it("falls back to TUI when the web client disconnects while waiting", async () => {
+    const broker = new InteractionBroker();
+    let webConnected = true;
+    const select = vi.fn().mockResolvedValue("1. First");
+    const ctx = { hasUI: true, ui: { select } } as unknown as ExtensionContext;
+    const presenter = createModeAwarePresenter(broker, () => webConnected);
+    const interaction = singleChoice("web_disconnect_pending");
+
+    const answerPromise = presenter.presentSingleChoice(
+      interaction,
+      undefined,
+      ctx
+    );
+    expect(broker.getPending()).toEqual([interaction]);
+    webConnected = false;
+
+    await expect(answerPromise).resolves.toMatchObject({
+      interactionId: interaction.id,
+      answer: { optionId: "A" }
+    });
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(broker.getPending()).toEqual([]);
   });
 });

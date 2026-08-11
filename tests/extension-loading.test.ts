@@ -3,9 +3,74 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ToolDefinition
+} from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
+
+import learningExtension from "../extension/index.js";
 
 describe("Pi extension loading", () => {
+  it("persists mastery changes produced by the record-attempt tool", async () => {
+    const tools = new Map<string, ToolDefinition>();
+    const appendEntry = vi.fn();
+    const pi = {
+      registerTool: (tool: ToolDefinition) => tools.set(tool.name, tool),
+      registerCommand: vi.fn(),
+      on: vi.fn(),
+      appendEntry
+    } as unknown as ExtensionAPI;
+    learningExtension(pi);
+
+    const ctx = {
+      hasUI: true,
+      ui: { select: vi.fn().mockResolvedValue("1. Move transfers ownership") }
+    } as unknown as ExtensionContext;
+    const askTool = tools.get("learning_ask_single_choice");
+    const answer = await askTool?.execute(
+      "tool_call_question",
+      {
+        question: "What does move do?",
+        options: [
+          { id: "A", label: "Move transfers ownership" },
+          { id: "B", label: "Move copies every value" }
+        ]
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+    const interactionId = (answer?.details as { interactionId: string })
+      .interactionId;
+    const tool = tools.get("learning_record_attempt");
+    await tool?.execute(
+      "tool_call_1",
+      {
+        interactionId,
+        conceptId: "ownership",
+        outcome: "correct",
+        evidenceType: "choice"
+      },
+      undefined,
+      undefined,
+      ctx
+    );
+
+    expect(appendEntry).toHaveBeenCalledWith(
+      "learning-state",
+      expect.objectContaining({
+        version: 1,
+        state: expect.objectContaining({
+          concepts: expect.objectContaining({
+            ownership: expect.objectContaining({ mastery: 0.28, attempts: 1 })
+          })
+        })
+      })
+    );
+  });
+
   it("loads the learning extension and registers its public surface", async () => {
     const agentDir = await mkdtemp(join(tmpdir(), "pi-learning-agent-"));
     try {

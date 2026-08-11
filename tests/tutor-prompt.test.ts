@@ -37,6 +37,13 @@ describe("tutor prompt", () => {
       course: { id: "rust", title: "Rust" },
       topic: { id: "generics", title: "Generics" }
     });
+    state.recordAttempt({
+      interactionId: "q_1",
+      conceptId: "trait-bounds",
+      outcome: "incorrect",
+      evidenceType: "choice",
+      misconception: "Confuses bounds with concrete types"
+    });
     registerTutorPrompt(pi, { state });
 
     const result = await handler?.(
@@ -58,5 +65,11 @@ describe("tutor prompt", () => {
     expect(systemPrompt).toContain("one primary learner interaction at a time");
     expect(systemPrompt).toContain("Current course: Rust");
     expect(systemPrompt).toContain("Current topic: Generics");
+    expect(systemPrompt).toContain(
+      "trait-bounds: mastery=0.12, attempts=1, correct=0"
+    );
+    expect(systemPrompt).toContain(
+      "misconceptions=Confuses bounds with concrete types"
+    );
   });
 });

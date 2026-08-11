@@ -7,8 +7,7 @@ import path from "node:path";
 import type { LearningStateStore } from "../state/learning-state.js";
 import {
   CodeRunUnavailableError,
-  isSupportedLanguage,
-  LocalCodeRunner
+  isSupportedLanguage
 } from "../runner/code-runner.js";
 import type { CodeRunner } from "../runner/code-runner.js";
 import type { InteractionBroker } from "./interaction-broker.js";
@@ -39,8 +38,8 @@ export interface LearningServerOptions {
    */
   staticRoot?: string;
   /**
-   * Code runner for POST /api/code/run (spec 25). Defaults to a
-   * LocalCodeRunner; injectable for tests (stub runner).
+   * Explicitly enables POST /api/code/run. Omit unless the host provides an
+   * appropriately isolated runner; local execution is disabled by default.
    */
   runner?: CodeRunner;
 }
@@ -63,7 +62,7 @@ export class LearningServer {
   private readonly now: () => number;
   private readonly sseHub = new SseHub();
   private readonly staticRoot: string;
-  private readonly runner: CodeRunner;
+  private readonly runner: CodeRunner | undefined;
   private server: Server | undefined;
   private startPromise: Promise<void> | undefined;
 
@@ -74,7 +73,7 @@ export class LearningServer {
     this.now = options.now ?? Date.now;
     this.staticRoot =
       options.staticRoot ?? path.resolve(import.meta.dirname, "../../web/dist");
-    this.runner = options.runner ?? new LocalCodeRunner();
+    this.runner = options.runner;
     this.broker.subscribe({
       onPresented: (interaction) =>
         this.sseHub.broadcast({ event: "interaction.presented", interaction }),
@@ -83,6 +82,12 @@ export class LearningServer {
           event: "interaction.resolved",
           interactionId: answer.interactionId,
           answer
+        }),
+      onCancelled: (interactionId, reason) =>
+        this.sseHub.broadcast({
+          event: "interaction.cancelled",
+          interactionId,
+          reason
         })
     });
   }
@@ -238,7 +243,11 @@ export class LearningServer {
     }
 
     if (method === "GET" && pathname === "/api/health") {
-      sendJson(response, 200, { ok: true, service: "pi-learning-agent" });
+      sendJson(response, 200, {
+        ok: true,
+        service: "pi-learning-agent",
+        capabilities: { codeExecution: this.runner !== undefined }
+      });
       return;
     }
 
@@ -263,10 +272,9 @@ export class LearningServer {
       return;
     }
 
-    // 规格 25：本地代码 runner。这个端点会执行任意学习者代码——它只在
-    // 127.0.0.1 + token 保护下可用（规格 31），且跑在临时目录 + env 白名单 +
-    // 超时 + 输出截断的边界内（LocalCodeRunner）。结果只回给学习者自测，
-    // 不进入 tool result（learning_ask_code 的“只提交不运行”契约不变）。
+    // 规格 25：只有宿主显式注入 runner 时才开放。临时目录、env 白名单、
+    // 超时和输出截断都不是安全沙箱，因此正式扩展默认返回 403。结果只回给
+    // 学习者自测，不进入 learning_ask_code 的 tool result。
     if (method === "POST" && pathname === "/api/code/run") {
       await this.handleCodeRun(request, response);
       return;
@@ -450,6 +458,16 @@ export class LearningServer {
     request: IncomingMessage,
     response: ServerResponse
   ): Promise<void> {
+    const runner = this.runner;
+    if (runner === undefined) {
+      sendJson(response, 403, {
+        ok: false,
+        reason: "code_execution_disabled",
+        message: "Local code execution is disabled for this session."
+      });
+      return;
+    }
+
     let rawBody: string;
     try {
       rawBody = await readBody(request);
@@ -511,7 +529,7 @@ export class LearningServer {
     }
 
     try {
-      const result = await this.runner.run({
+      const result = await runner.run({
         language: body.language,
         code: body.code,
         timeoutMs

@@ -50,6 +50,7 @@ export function registerLearningStatePersistence(
   state: LearningStateStore
 ): void {
   pi.on("session_start", (_event, ctx) => {
+    state.resetForSession();
     restoreLearningStateFromEntries(state, ctx.sessionManager.getBranch());
   });
 }

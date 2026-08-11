@@ -36,6 +36,10 @@ export function registerLearningTools(
   );
   pi.registerTool(createAskCodeTool({ present: presenter.presentCode }));
   pi.registerTool(
-    createAskRecordAttemptTool({ state: dependencies.state })
+    createAskRecordAttemptTool({
+      state: dependencies.state,
+      isInteractionResolved: (interactionId) =>
+        dependencies.broker.hasResolved(interactionId)
+    })
   );
 }

@@ -251,6 +251,44 @@ describe("Web workspace round trip", () => {
     await sse.close();
   });
 
+  it("emits a cancellation event when a pending interaction is aborted", async () => {
+    const response = await fetch(`${origin}/api/events?token=${TOKEN}`, { headers });
+    const sse = new SseReader(response.body);
+    const interaction = singleChoiceInteraction("web_cancel_1");
+    const presentedPromise = sse.waitFor(
+      (data) =>
+        data.event === "interaction.presented" &&
+        (data.interaction as { id?: string }).id === interaction.id
+    );
+    const presentation = broker.present(interaction);
+    await presentedPromise;
+    const rejected = expect(presentation).rejects.toMatchObject({
+      name: "InteractionCancelledError"
+    });
+    const cancelledPromise = sse.waitFor(
+      (data) =>
+        data.event === "interaction.cancelled" &&
+        data.interactionId === interaction.id
+    );
+
+    broker.cancel(interaction.id, "learning_stopped");
+
+    await rejected;
+    expect(await cancelledPromise).toMatchObject({
+      event: "interaction.cancelled",
+      interactionId: interaction.id,
+      reason: "learning_stopped"
+    });
+    const pendingResponse = await fetch(
+      `${origin}/api/interactions/pending`,
+      { headers }
+    );
+    expect(
+      ((await pendingResponse.json()) as { interactions: unknown[] }).interactions
+    ).toEqual([]);
+    await sse.close();
+  });
+
   it("blocks encoded traversal variants that would escape the dist root (spec 31)", async () => {
     // secret.txt 放在 distRoot 之外（tmpdir 里）：任何能读到它的路径都是逃逸。
     const distRoot = mkdtempSync(path.join(tmpdir(), "pi-learning-web-qa-"));

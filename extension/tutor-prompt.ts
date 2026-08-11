@@ -16,6 +16,18 @@ export function registerTutorPrompt(
       return;
     }
 
+    const conceptState = Object.values(state.concepts).map((concept) => {
+      const misconceptions = concept.misconceptions
+        .slice(0, 3)
+        .map(toPromptLine)
+        .join(" | ");
+      return (
+        `- ${toPromptLine(concept.id)}: mastery=${concept.mastery.toFixed(2)}, ` +
+        `attempts=${concept.attempts}, correct=${concept.correct}, ` +
+        `misconceptions=${misconceptions === "" ? "none" : misconceptions}`
+      );
+    });
+
     const learningPrompt = [
       "You are operating in Learning Mode.",
       "",
@@ -37,9 +49,15 @@ export function registerTutorPrompt(
       `Current topic: ${state.topic?.title ?? "unspecified"}`,
       `Current phase: ${state.phase}`,
       `Tracked concepts: ${Object.keys(state.concepts).length}`,
-      `Recent attempts: ${state.recentAttempts.length}`
+      `Recent attempts: ${state.recentAttempts.length}`,
+      "Concept state:",
+      ...(conceptState.length === 0 ? ["- none"] : conceptState)
     ].join("\n");
 
     return { systemPrompt: `${event.systemPrompt}\n\n${learningPrompt}` };
   });
+}
+
+function toPromptLine(value: string): string {
+  return value.replace(/\s+/gu, " ").trim().slice(0, 200);
 }

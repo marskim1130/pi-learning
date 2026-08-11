@@ -76,7 +76,10 @@ export function createAskFreeResponseTool(
 
       return {
         content: [
-          { type: "text", text: "Learner submitted a free response." }
+          {
+            type: "text",
+            text: `Learner submitted this free response:\n${resolved.answer.text}`
+          }
         ],
         details
       };

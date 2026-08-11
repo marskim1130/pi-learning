@@ -1,7 +1,7 @@
 // MathText（规格 20/26 推荐 KaTeX）：把文本按 $$...$$（块级）与 $...$（行内）切成
-// 段，非公式段走 marked，公式段用 katex.renderToString。dangerouslySetInnerHTML 的
-// XSS 策略沿用 TutorTranscript 注释（内容来自本地 Tutor 模型输出）。
+// 段，非公式段走 marked，公式段用 katex.renderToString，最终 HTML 统一消毒。
 
+import DOMPurify from "dompurify";
 import katex from "katex";
 import { marked } from "marked";
 
@@ -81,7 +81,7 @@ function pushText(segments: MathSegment[], content: string): void {
 
 /** 段列表 → HTML：text 段走 marked（保留 markdown，breaks 让单换行也断行），math 段走 KaTeX。 */
 export function renderSegments(segments: MathSegment[]): string {
-  return segments
+  const html = segments
     .map((segment) =>
       segment.type === "math"
         ? katex.renderToString(segment.content, {
@@ -91,6 +91,9 @@ export function renderSegments(segments: MathSegment[]): string {
         : marked.parse(segment.content, { async: false, breaks: true })
     )
     .join("");
+  // 使用默认 profile 保留 KaTeX 所需的安全 MathML/SVG，同时移除脚本、
+  // 事件处理属性和 javascript: URL。
+  return DOMPurify.sanitize(html);
 }
 
 export default function MathText({
@@ -103,8 +106,6 @@ export default function MathText({
   return (
     <div
       className={className ?? "entry-text"}
-      // XSS 风险：内容来自本地 Tutor 模型输出（学习场景），未消毒直接渲染。
-      // 若未来引入外部/用户输入来源，先接 DOMPurify 再落 dangerouslySetInnerHTML。
       dangerouslySetInnerHTML={{
         __html: renderSegments(splitMathSegments(normalizeModelText(text)))
       }}

@@ -10,6 +10,7 @@ import { validateInteractionAnswer } from "../utils/validation.js";
 export interface BrokerListeners {
   onPresented?: (interaction: LearningInteraction) => void;
   onResolved?: (answer: ResolvedAnswer) => void;
+  onCancelled?: (interactionId: string, reason: string) => void;
 }
 
 interface PendingInteraction {
@@ -77,7 +78,8 @@ export class InteractionBroker {
       const onAbort = () => {
         this.rejectPending(
           interaction.id,
-          new InteractionCancelledError(interaction.id, "aborted")
+          new InteractionCancelledError(interaction.id, "aborted"),
+          "aborted"
         );
       };
       const cleanup = () => {
@@ -171,7 +173,8 @@ export class InteractionBroker {
   cancel(interactionId: string, reason: string): void {
     this.rejectPending(
       interactionId,
-      new InteractionCancelledError(interactionId, reason)
+      new InteractionCancelledError(interactionId, reason),
+      reason
     );
   }
 
@@ -183,6 +186,10 @@ export class InteractionBroker {
 
   getPending(): LearningInteraction[] {
     return [...this.pending.values()].map(({ interaction }) => interaction);
+  }
+
+  hasResolved(interactionId: string): boolean {
+    return this.resolvedIds.has(interactionId);
   }
 
   private rememberResolved(interactionId: string): void {
@@ -197,7 +204,11 @@ export class InteractionBroker {
     }
   }
 
-  private rejectPending(interactionId: string, error: Error): void {
+  private rejectPending(
+    interactionId: string,
+    error: Error,
+    cancellationReason?: string
+  ): void {
     const pending = this.pending.get(interactionId);
     if (!pending) {
       return;
@@ -206,6 +217,11 @@ export class InteractionBroker {
     this.pending.delete(interactionId);
     pending.cleanup();
     pending.reject(error);
+    if (cancellationReason !== undefined) {
+      notifyListener(() =>
+        this.listeners.onCancelled?.(interactionId, cancellationReason)
+      );
+    }
   }
 }
 

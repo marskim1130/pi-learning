@@ -7,9 +7,36 @@ import { LearningStateStore } from "../extension/state/learning-state.js";
 const ctx = { hasUI: false, ui: {} } as unknown as ExtensionContext;
 
 describe("learning_record_attempt tool", () => {
+  it("rejects an interaction that has not been resolved", async () => {
+    const state = new LearningStateStore();
+    const tool = createAskRecordAttemptTool({
+      state,
+      isInteractionResolved: () => false
+    });
+
+    await expect(
+      tool.execute(
+        "tool_call_unknown",
+        {
+          interactionId: "q_unknown",
+          conceptId: "ownership",
+          outcome: "correct",
+          evidenceType: "choice"
+        },
+        undefined,
+        undefined,
+        ctx
+      )
+    ).rejects.toThrow(/has not been resolved/u);
+    expect(state.snapshot().concepts).toEqual({});
+  });
+
   it("records an attempt, creates the concept and reports mastery change", async () => {
     const state = new LearningStateStore();
-    const tool = createAskRecordAttemptTool({ state });
+    const tool = createAskRecordAttemptTool({
+      state,
+      isInteractionResolved: () => true
+    });
 
     const result = await tool.execute(
       "tool_call_1",
@@ -51,7 +78,10 @@ describe("learning_record_attempt tool", () => {
       outcome: "incorrect",
       evidenceType: "choice"
     });
-    const tool = createAskRecordAttemptTool({ state });
+    const tool = createAskRecordAttemptTool({
+      state,
+      isInteractionResolved: () => true
+    });
 
     const result = await tool.execute(
       "tool_call_2",
@@ -78,7 +108,10 @@ describe("learning_record_attempt tool", () => {
 
   it("records attempts while learning mode is off", async () => {
     const state = new LearningStateStore(); // enabled: false, no course/topic
-    const tool = createAskRecordAttemptTool({ state });
+    const tool = createAskRecordAttemptTool({
+      state,
+      isInteractionResolved: () => true
+    });
 
     const result = await tool.execute(
       "tool_call_3",
@@ -103,7 +136,10 @@ describe("learning_record_attempt tool", () => {
     // does not validate, so this is the real guard.
     const { validateToolArguments } = await import("@earendil-works/pi-ai");
     const state = new LearningStateStore();
-    const tool = createAskRecordAttemptTool({ state });
+    const tool = createAskRecordAttemptTool({
+      state,
+      isInteractionResolved: () => true
+    });
     const runtimeTool = {
       name: "learning_record_attempt",
       description: tool.description,
@@ -128,5 +164,27 @@ describe("learning_record_attempt tool", () => {
     ]) {
       expect(() => validateToolArguments(runtimeTool, call(bad))).toThrow();
     }
+  });
+
+  it("uses Google-compatible string enum schemas", () => {
+    const state = new LearningStateStore();
+    const tool = createAskRecordAttemptTool({
+      state,
+      isInteractionResolved: () => true
+    });
+    const properties = (tool.parameters as unknown as {
+      properties: Record<string, Record<string, unknown>>;
+    }).properties;
+
+    expect(properties.outcome).toMatchObject({
+      type: "string",
+      enum: ["correct", "partial", "incorrect"]
+    });
+    expect(properties.evidenceType).toMatchObject({
+      type: "string",
+      enum: ["choice", "free_response", "code"]
+    });
+    expect(properties.outcome).not.toHaveProperty("anyOf");
+    expect(properties.evidenceType).not.toHaveProperty("anyOf");
   });
 });

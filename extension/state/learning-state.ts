@@ -54,6 +54,7 @@ const MASTERY_PENALTIES: Record<Exclude<AttemptOutcome, "correct">, number> = {
  */
 const MASTERY_CEILING = 0.75;
 const MAX_RECENT_ATTEMPTS = 20;
+const MAX_RECORDED_INTERACTION_IDS = 1_000;
 const MAX_RECENT_OUTCOMES = 10;
 const MAX_MISCONCEPTIONS = 10;
 
@@ -83,12 +84,7 @@ export function updateMastery(
 
 export class LearningStateStore {
   private readonly onChange: ((snapshot: LearningState) => void) | undefined;
-  private state: LearningState = {
-    enabled: false,
-    phase: "idle",
-    concepts: {},
-    recentAttempts: []
-  };
+  private state: LearningState = initialLearningState();
 
   constructor(options: LearningStateStoreOptions = {}) {
     this.onChange = options.onChange;
@@ -96,6 +92,11 @@ export class LearningStateStore {
 
   snapshot(): LearningState {
     return structuredClone(this.state);
+  }
+
+  /** Clear process-local state before replaying a different Pi session branch. */
+  resetForSession(): void {
+    this.state = initialLearningState();
   }
 
   restore(candidate: unknown): boolean {
@@ -133,6 +134,15 @@ export class LearningStateStore {
    * prepends to recentAttempts/recentOutcomes (bounded).
    */
   recordAttempt(input: RecordAttemptInput): AttemptSummary {
+    const recordedInteractionIds =
+      this.state.recordedInteractionIds ??
+      [...new Set(this.state.recentAttempts.map((attempt) => attempt.interactionId))];
+    if (recordedInteractionIds.includes(input.interactionId)) {
+      throw new Error(
+        `Attempt for interaction ${input.interactionId} has already been recorded.`
+      );
+    }
+
     const recordedAt = Date.now();
     const existing = this.state.concepts[input.conceptId];
     const concept: ConceptState =
@@ -186,6 +196,10 @@ export class LearningStateStore {
       0,
       MAX_RECENT_ATTEMPTS
     );
+    this.state.recordedInteractionIds = [
+      input.interactionId,
+      ...recordedInteractionIds
+    ].slice(0, MAX_RECORDED_INTERACTION_IDS);
 
     this.notifyChange();
     return summary;
@@ -194,6 +208,15 @@ export class LearningStateStore {
   private notifyChange(): void {
     this.onChange?.(this.snapshot());
   }
+}
+
+function initialLearningState(): LearningState {
+  return {
+    enabled: false,
+    phase: "idle",
+    concepts: {},
+    recentAttempts: []
+  };
 }
 
 /** True when the trailing run of correct records contains >= 2 evidence forms. */
@@ -243,7 +266,13 @@ function isLearningState(value: unknown): value is LearningState {
     isOptionalCourseOrTopic(value.topic) &&
     isConceptMap(value.concepts) &&
     Array.isArray(value.recentAttempts) &&
-    value.recentAttempts.every(isAttemptSummary)
+    value.recentAttempts.every(isAttemptSummary) &&
+    (value.recordedInteractionIds === undefined ||
+      (Array.isArray(value.recordedInteractionIds) &&
+        value.recordedInteractionIds.length <= MAX_RECORDED_INTERACTION_IDS &&
+        value.recordedInteractionIds.every(isNonEmptyString) &&
+        new Set(value.recordedInteractionIds).size ===
+          value.recordedInteractionIds.length))
   );
 }
 

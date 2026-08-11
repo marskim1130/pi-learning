@@ -36,6 +36,7 @@ interface LearningWorkspaceState {
   pending: LearningInteraction[];
   transcript: TranscriptEntry[];
   bootError: string | null;
+  codeExecutionEnabled: boolean;
 
   connect: () => void;
   disconnect: () => void;
@@ -55,6 +56,7 @@ export const useLearningWorkspace = create<LearningWorkspaceState>()(
     pending: [],
     transcript: [],
     bootError: null,
+    codeExecutionEnabled: false,
 
     connect: () => {
       openEventSource();
@@ -89,15 +91,19 @@ export async function initialize(): Promise<void> {
     return;
   }
   try {
-    const ok = await client.health();
-    if (!ok) {
+    const health = await client.health();
+    if (!health.ok) {
       throw new Error("health check failed");
     }
     const [session, pending] = await Promise.all([
       client.getSession(),
       client.getPendingInteractions()
     ]);
-    useLearningWorkspace.setState({ session, pending });
+    useLearningWorkspace.setState({
+      session,
+      pending,
+      codeExecutionEnabled: health.codeExecutionEnabled
+    });
   } catch {
     useLearningWorkspace.getState().setBootError(
       "无法连接本地学习服务。请确认 Pi 会话正在运行，并用带 token 的链接重新打开。"
@@ -130,6 +136,7 @@ function openEventSource(): void {
   for (const name of [
     "interaction.presented",
     "interaction.resolved",
+    "interaction.cancelled",
     "session.updated",
     "tutor.message",
     "tutor.status"
@@ -187,6 +194,15 @@ function handleSseEvent(event: MessageEvent): void {
             interactionId,
             data.answer as ResolvedAnswer
           )
+        }));
+      }
+      break;
+    }
+    case "interaction.cancelled": {
+      const interactionId = data.interactionId;
+      if (typeof interactionId === "string") {
+        store.setState((state) => ({
+          pending: state.pending.filter((p) => p.id !== interactionId)
         }));
       }
       break;

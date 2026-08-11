@@ -103,6 +103,18 @@ describe("normalizeModelText", () => {
 });
 
 describe("MathText render integration", () => {
+  it("removes executable HTML from model-provided markdown", () => {
+    const { container } = render(
+      <MathText
+        text={'<script>window.pwned = true</script><img src="x" onerror="window.pwned = true"><a href="javascript:window.pwned=true">unsafe</a>'}
+      />
+    );
+
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("img")?.getAttribute("onerror")).toBeNull();
+    expect(container.querySelector("a")?.getAttribute("href")).toBeNull();
+  });
+
   it("renders a fenced code block in the question text", () => {
     const { container } = render(
       <MathText text={"看这段代码：\n\n```rust\nfn max_of<T: PartialOrd>(a: T, b: T) -> T {\n    if a > b { a } else { b }\n}\n```\n\n它做了什么？"} />

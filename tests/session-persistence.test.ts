@@ -109,4 +109,44 @@ describe("learning session persistence", () => {
       phase: "practicing"
     });
   });
+
+  it("clears state when the newly active branch has no learning snapshot", async () => {
+    let sessionStart: ExtensionHandler<SessionStartEvent> | undefined;
+    const pi = {
+      on: (
+        event: string,
+        handler: ExtensionHandler<SessionStartEvent>
+      ) => {
+        if (event === "session_start") {
+          sessionStart = handler;
+        }
+      }
+    } as unknown as ExtensionAPI;
+    const state = new LearningStateStore();
+    state.start({
+      course: { id: "rust", title: "Rust" },
+      topic: { id: "ownership", title: "Ownership" }
+    });
+    state.recordAttempt({
+      interactionId: "q_old",
+      conceptId: "borrowing",
+      outcome: "correct",
+      evidenceType: "choice"
+    });
+    registerLearningStatePersistence(pi, state);
+
+    await sessionStart?.(
+      { type: "session_start", reason: "new" },
+      {
+        sessionManager: { getBranch: () => [] }
+      } as unknown as ExtensionContext
+    );
+
+    expect(state.snapshot()).toEqual({
+      enabled: false,
+      phase: "idle",
+      concepts: {},
+      recentAttempts: []
+    });
+  });
 });

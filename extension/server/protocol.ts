@@ -148,6 +148,12 @@ export interface InteractionResolvedEvent {
   answer: ResolvedAnswer;
 }
 
+export interface InteractionCancelledEvent {
+  event: "interaction.cancelled";
+  interactionId: string;
+  reason: string;
+}
+
 export interface SessionUpdatedEvent {
   event: "session.updated";
   session: LearningSessionSnapshot;
@@ -185,6 +191,7 @@ export interface TutorStatusEvent {
 export type LearningEvent =
   | InteractionPresentedEvent
   | InteractionResolvedEvent
+  | InteractionCancelledEvent
   | SessionUpdatedEvent
   | LearningErrorEvent
   | TutorMessageEvent

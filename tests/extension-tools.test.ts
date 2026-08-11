@@ -306,7 +306,12 @@ describe("learning tools", () => {
       undefined
     );
     expect(result).toEqual({
-      content: [{ type: "text", text: "Learner submitted a free response." }],
+      content: [
+        {
+          type: "text",
+          text: "Learner submitted this free response:\nA trait bound constrains T."
+        }
+      ],
       details: {
         interactionId: "free_test",
         type: "free_response",
@@ -349,7 +354,12 @@ describe("learning tools", () => {
       "fn identity<T>(value: T) -> T {\n    todo!()\n}"
     );
     expect(result).toEqual({
-      content: [{ type: "text", text: "Learner submitted code in rust." }],
+      content: [
+        {
+          type: "text",
+          text: "Learner submitted code in rust:\nfn identity<T>(value: T) -> T { value }"
+        }
+      ],
       details: {
         interactionId: "code_test",
         type: "code",

@@ -27,7 +27,7 @@ export default function ProgressPanel(): React.JSX.Element {
   const mastery =
     concepts.length === 0
       ? null
-      : Math.round(
+      : toPercent(
           concepts.reduce((sum, c) => sum + c.mastery, 0) / concepts.length
         );
 
@@ -47,25 +47,30 @@ export default function ProgressPanel(): React.JSX.Element {
         <p className="muted">还没有概念进度。Tutor 讲解并出题后会出现在这里。</p>
       ) : (
         <div className="concept-list">
-          {concepts.map((concept) => (
-            <div key={concept.id} className="concept">
+          {concepts.map((concept) => {
+            const masteryPercent = toPercent(concept.mastery);
+            return <div key={concept.id} className="concept">
               <span className="concept-title" title={concept.title}>
                 {concept.title}
               </span>
-              <div className="bar" role="progressbar" aria-valuenow={concept.mastery} aria-valuemin={0} aria-valuemax={100} aria-label={`${concept.title} 掌握度`}>
+              <div className="bar" role="progressbar" aria-valuenow={masteryPercent} aria-valuemin={0} aria-valuemax={100} aria-label={`${concept.title} 掌握度`}>
                 <div
                   className="bar-fill"
-                  style={{ width: `${Math.min(100, Math.max(0, concept.mastery))}%` }}
+                  style={{ width: `${masteryPercent}%` }}
                 />
               </div>
-              <span className="concept-mastery">{concept.mastery}%</span>
+              <span className="concept-mastery">{masteryPercent}%</span>
               <span className="muted">
                 尝试 {concept.attempts} · 正确 {concept.correct}
               </span>
-            </div>
-          ))}
+            </div>;
+          })}
         </div>
       )}
     </footer>
   );
+}
+
+function toPercent(mastery: number): number {
+  return Math.round(Math.min(1, Math.max(0, mastery)) * 100);
 }

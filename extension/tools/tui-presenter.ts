@@ -94,22 +94,48 @@ export function createModeAwarePresenter(
   return {
     presentSingleChoice: (interaction, signal, ctx) =>
       hasWebClient()
-        ? presentViaBroker(broker, interaction, signal)
+        ? presentViaBrokerWithFallback(
+            broker,
+            hasWebClient,
+            interaction,
+            signal,
+            () => fallback.presentSingleChoice(interaction, signal, ctx)
+          )
         : fallback.presentSingleChoice(interaction, signal, ctx),
     presentMultiChoice: (interaction, signal, ctx) =>
       hasWebClient()
-        ? presentViaBroker(broker, interaction, signal)
+        ? presentViaBrokerWithFallback(
+            broker,
+            hasWebClient,
+            interaction,
+            signal,
+            () => fallback.presentMultiChoice(interaction, signal, ctx)
+          )
         : fallback.presentMultiChoice(interaction, signal, ctx),
     presentFreeResponse: (interaction, signal, ctx) =>
       hasWebClient()
-        ? presentViaBroker(broker, interaction, signal)
+        ? presentViaBrokerWithFallback(
+            broker,
+            hasWebClient,
+            interaction,
+            signal,
+            () => fallback.presentFreeResponse(interaction, signal, ctx)
+          )
         : fallback.presentFreeResponse(interaction, signal, ctx),
     presentCode: (interaction, signal, ctx) =>
       hasWebClient()
-        ? presentViaBroker(broker, interaction, signal)
+        ? presentViaBrokerWithFallback(
+            broker,
+            hasWebClient,
+            interaction,
+            signal,
+            () => fallback.presentCode(interaction, signal, ctx)
+          )
         : fallback.presentCode(interaction, signal, ctx)
   };
 }
+
+const WEB_DISCONNECT_POLL_MS = 250;
 
 function presentViaBroker(
   broker: InteractionBroker,
@@ -139,6 +165,107 @@ function presentViaBroker(
   // Web-only path: the browser submits through the server; broker.present
   // rejects on tool abort, so the tool surfaces the cancellation normally.
   return broker.present(interaction, signal);
+}
+
+function presentViaBrokerWithFallback(
+  broker: InteractionBroker,
+  hasWebClient: () => boolean,
+  interaction: SingleChoiceInteraction,
+  signal: AbortSignal | undefined,
+  fallback: () => Promise<SingleChoiceResolvedAnswer>
+): Promise<SingleChoiceResolvedAnswer>;
+function presentViaBrokerWithFallback(
+  broker: InteractionBroker,
+  hasWebClient: () => boolean,
+  interaction: MultiChoiceInteraction,
+  signal: AbortSignal | undefined,
+  fallback: () => Promise<MultiChoiceResolvedAnswer>
+): Promise<MultiChoiceResolvedAnswer>;
+function presentViaBrokerWithFallback(
+  broker: InteractionBroker,
+  hasWebClient: () => boolean,
+  interaction: FreeResponseInteraction,
+  signal: AbortSignal | undefined,
+  fallback: () => Promise<FreeResponseResolvedAnswer>
+): Promise<FreeResponseResolvedAnswer>;
+function presentViaBrokerWithFallback(
+  broker: InteractionBroker,
+  hasWebClient: () => boolean,
+  interaction: CodeExerciseInteraction,
+  signal: AbortSignal | undefined,
+  fallback: () => Promise<CodeExerciseResolvedAnswer>
+): Promise<CodeExerciseResolvedAnswer>;
+function presentViaBrokerWithFallback(
+  broker: InteractionBroker,
+  hasWebClient: () => boolean,
+  interaction: LearningInteraction,
+  signal: AbortSignal | undefined,
+  fallback: () => Promise<ResolvedAnswer>
+): Promise<ResolvedAnswer> {
+  return new Promise<ResolvedAnswer>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let switchingToTui = false;
+    let settled = false;
+    const cleanup = () => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+    const resolveOnce = (answer: ResolvedAnswer) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(answer);
+    };
+    const rejectOnce = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    void broker.present(interaction, signal).then(
+      (answer) => {
+        if (!switchingToTui) {
+          resolveOnce(answer);
+        }
+      },
+      (error: unknown) => {
+        // broker.cancel("web_disconnected") is expected during the handoff;
+        // the fallback presenter now owns the interaction result.
+        if (!switchingToTui) {
+          rejectOnce(error);
+        }
+      }
+    );
+
+    const poll = () => {
+      if (settled || switchingToTui) {
+        return;
+      }
+      if (!hasWebClient()) {
+        const stillPending = broker
+          .getPending()
+          .some((pending) => pending.id === interaction.id);
+        if (!stillPending) {
+          return;
+        }
+        switchingToTui = true;
+        // Reject the Web wait before opening the TUI so only one broker entry
+        // can own this interaction at a time.
+        broker.cancel(interaction.id, "web_disconnected");
+        void fallback().then(resolveOnce, rejectOnce);
+        return;
+      }
+      timer = setTimeout(poll, WEB_DISCONNECT_POLL_MS);
+    };
+    timer = setTimeout(poll, WEB_DISCONNECT_POLL_MS);
+  });
 }
 
 export async function presentSingleChoiceInTui(

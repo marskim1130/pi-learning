@@ -1,4 +1,5 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 import {
@@ -9,19 +10,8 @@ import {
 const parameters = Type.Object({
   interactionId: Type.String({ minLength: 1 }),
   conceptId: Type.String({ minLength: 1 }),
-  // Spec 11.6 prefers pi-ai StringEnum for Google-provider compat, but pi-ai
-  // is not a declared dependency of this repo, so TypeBox literals match the
-  // existing tools' style. Swap to StringEnum when pi-ai becomes a dependency.
-  outcome: Type.Union([
-    Type.Literal("correct"),
-    Type.Literal("partial"),
-    Type.Literal("incorrect")
-  ]),
-  evidenceType: Type.Union([
-    Type.Literal("choice"),
-    Type.Literal("free_response"),
-    Type.Literal("code")
-  ]),
+  outcome: StringEnum(["correct", "partial", "incorrect"] as const),
+  evidenceType: StringEnum(["choice", "free_response", "code"] as const),
   misconception: Type.Optional(Type.String({ minLength: 1 }))
 });
 
@@ -36,18 +26,18 @@ export interface RecordAttemptToolDetails {
 
 export interface RecordAttemptToolDependencies {
   state: LearningStateStore;
+  isInteractionResolved: (interactionId: string) => boolean;
 }
 
 /**
  * Non-blocking: records the tutor's evaluation, returns immediately (no
- * executionMode needed; the default is sequential already). No interactionId
- * existence check against the broker: the broker has no resolved-query API
- * and forcing one would widen its interface — MVP accepts any id.
+ * executionMode needed; the default is sequential already). The caller must
+ * provide a resolved-interaction lookup so arbitrary ids cannot alter mastery.
  */
 export function createAskRecordAttemptTool(
   dependencies: RecordAttemptToolDependencies
 ) {
-  const { state } = dependencies;
+  const { state, isInteractionResolved } = dependencies;
 
   return defineTool<typeof parameters, RecordAttemptToolDetails>({
     name: "learning_record_attempt",
@@ -57,6 +47,11 @@ export function createAskRecordAttemptTool(
     promptSnippet: "Record the learner's attempt and update concept mastery",
     parameters,
     async execute(_toolCallId, params) {
+      if (!isInteractionResolved(params.interactionId)) {
+        throw new Error(
+          `Learning interaction ${params.interactionId} has not been resolved.`
+        );
+      }
       const previousMastery =
         state.snapshot().concepts[params.conceptId]?.mastery ??
         INITIAL_MASTERY;

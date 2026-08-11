@@ -34,11 +34,9 @@ export function registerLearningCommands(
       }
 
       state.start(target);
-      const snapshot = state.snapshot();
       pi.setSessionName(
         `Learn: ${target.course.title} - ${target.topic.title}`
       );
-      pi.appendEntry("learning-state", { version: 1, state: snapshot });
       const workspaceUrl = await ensureServerStarted(server, ctx);
       if (workspaceUrl !== undefined) {
         await openWorkspace(workspaceUrl);
@@ -87,7 +85,6 @@ export function registerLearningCommands(
     handler: async (_args, ctx) => {
       state.stop();
       dependencies.broker.cancelAll("learning_stopped");
-      pi.appendEntry("learning-state", { version: 1, state: state.snapshot() });
       ctx.ui.notify("Learning Mode disabled.", "info");
     }
   });

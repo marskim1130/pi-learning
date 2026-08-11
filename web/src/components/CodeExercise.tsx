@@ -33,7 +33,11 @@ export default function CodeExercise({
   const [runResult, setRunResult] = useState<CodeRunResult | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const submitRef = useRef<() => void>(() => undefined);
-  const canRun = RUNNABLE_LANGUAGES.has(interaction.language);
+  const codeExecutionEnabled = useLearningWorkspace(
+    (state) => state.codeExecutionEnabled
+  );
+  const canRun =
+    codeExecutionEnabled && RUNNABLE_LANGUAGES.has(interaction.language);
   const busy = submitting || running;
 
   useEffect(() => {

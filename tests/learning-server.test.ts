@@ -6,7 +6,8 @@ import { InteractionBroker } from "../extension/server/interaction-broker.js";
 import { LearningServer } from "../extension/server/learning-server.js";
 import type { LearningInteraction } from "../extension/server/protocol.js";
 import {
-  CodeRunUnavailableError
+  CodeRunUnavailableError,
+  LocalCodeRunner
 } from "../extension/runner/code-runner.js";
 import type { CodeRunner } from "../extension/runner/code-runner.js";
 import { LearningStateStore } from "../extension/state/learning-state.js";
@@ -118,7 +119,12 @@ describe("LearningServer HTTP API", () => {
   beforeEach(async () => {
     broker = new InteractionBroker();
     state = new LearningStateStore();
-    server = new LearningServer({ broker, state, token: TOKEN });
+    server = new LearningServer({
+      broker,
+      state,
+      token: TOKEN,
+      runner: new LocalCodeRunner()
+    });
     await server.start();
     origin = new URL(server.url() ?? "http://127.0.0.1").origin;
   });
@@ -144,8 +150,25 @@ describe("LearningServer HTTP API", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       ok: true,
-      service: "pi-learning-agent"
+      service: "pi-learning-agent",
+      capabilities: { codeExecution: true }
     });
+  });
+
+  it("advertises code execution as unavailable without an explicit runner", async () => {
+    const disabledServer = new LearningServer({ broker, state, token: TOKEN });
+    await disabledServer.start();
+    try {
+      const disabledOrigin = new URL(disabledServer.url() ?? "").origin;
+      const response = await fetch(`${disabledOrigin}/api/health`, { headers });
+
+      expect(await response.json()).toMatchObject({
+        ok: true,
+        capabilities: { codeExecution: false }
+      });
+    } finally {
+      await disabledServer.close();
+    }
   });
 
   it("maps the learning state snapshot to /api/session", async () => {
@@ -489,6 +512,27 @@ describe("LearningServer HTTP API", () => {
       body: JSON.stringify({ language: "node", code: "console.log(1)" })
     });
     expect(response.status).toBe(401);
+  });
+
+  it("disables local code execution when no runner is explicitly configured", async () => {
+    const disabledServer = new LearningServer({ broker, state, token: TOKEN });
+    await disabledServer.start();
+    try {
+      const disabledOrigin = new URL(disabledServer.url() ?? "").origin;
+      const response = await fetch(`${disabledOrigin}/api/code/run`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ language: "node", code: "console.log(1)" })
+      });
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        ok: false,
+        reason: "code_execution_disabled"
+      });
+    } finally {
+      await disabledServer.close();
+    }
   });
 
   it("rejects /api/code/run with a language outside the whitelist", async () => {

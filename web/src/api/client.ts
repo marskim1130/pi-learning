@@ -20,6 +20,11 @@ export class ApiError extends Error {
   }
 }
 
+export interface HealthStatus {
+  ok: boolean;
+  codeExecutionEnabled: boolean;
+}
+
 export function getToken(): string | null {
   return sessionStorage.getItem(TOKEN_KEY);
 }
@@ -79,9 +84,15 @@ export function describeRunError(error: unknown): string {
 }
 
 export const client = {
-  async health(): Promise<boolean> {
-    const body = await request<{ ok: boolean }>("/api/health");
-    return body.ok;
+  async health(): Promise<HealthStatus> {
+    const body = await request<{
+      ok: boolean;
+      capabilities?: { codeExecution?: boolean };
+    }>("/api/health");
+    return {
+      ok: body.ok,
+      codeExecutionEnabled: body.capabilities?.codeExecution === true
+    };
   },
 
   async getSession(): Promise<LearningSessionSnapshot> {

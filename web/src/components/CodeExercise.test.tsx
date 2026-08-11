@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import CodeExercise from "./CodeExercise";
 import { client } from "../api/client";
+import { useLearningWorkspace } from "../state/store";
 import type { CodeExerciseInteraction } from "../types/protocol";
 
 afterEach(cleanup);
@@ -122,6 +123,7 @@ function interaction(
 
 beforeEach(() => {
   localStorage.clear();
+  useLearningWorkspace.setState({ codeExecutionEnabled: true });
   submit.mockReset();
   runCode.mockReset();
   fake.applyEdits.mockClear();
@@ -149,6 +151,15 @@ beforeEach(() => {
 });
 
 describe("CodeExercise", () => {
+  it("hides Run when local code execution is disabled", () => {
+    useLearningWorkspace.setState({ codeExecutionEnabled: false });
+
+    render(<CodeExercise interaction={interaction()} />);
+
+    expect(screen.queryByRole("button", { name: "运行" })).toBeNull();
+    expect(screen.getByRole("button", { name: "提交" })).toBeTruthy();
+  });
+
   it("restores the draft and renders Run/Submit buttons", () => {
     localStorage.setItem("pi_draft_code_1", "print(1)");
     render(<CodeExercise interaction={interaction()} />);

@@ -252,7 +252,7 @@ describe("LearningStateStore.recordAttempt", () => {
 
     for (let i = 0; i < 15; i += 1) {
       store.recordAttempt({
-        interactionId: `q_${i}`,
+        interactionId: `q_extra_${i}`,
         conceptId: "c",
         outcome: "incorrect",
         evidenceType: "choice",
@@ -273,6 +273,29 @@ describe("LearningStateStore.recordAttempt", () => {
     expect(store.snapshot().recentAttempts[0]?.interactionId).toBe("q_24");
     expect(store.snapshot().concepts.c?.recentOutcomes).toHaveLength(10);
     expect(store.snapshot().concepts.c?.attempts).toBe(25);
+  });
+
+  it("rejects a duplicate interaction id after recent history rolls over", () => {
+    const store = new LearningStateStore();
+    for (let i = 0; i < 21; i += 1) {
+      store.recordAttempt({
+        interactionId: `unique_${i}`,
+        conceptId: "c",
+        outcome: "correct",
+        evidenceType: "choice"
+      });
+    }
+    const before = store.snapshot();
+
+    expect(() =>
+      store.recordAttempt({
+        interactionId: "unique_0",
+        conceptId: "c",
+        outcome: "correct",
+        evidenceType: "choice"
+      })
+    ).toThrow(/already been recorded/u);
+    expect(store.snapshot()).toEqual(before);
   });
 
   it("does not include misconception in the summary when absent", () => {

@@ -127,7 +127,10 @@ describe("web workspace store SSE handling", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
       const path = String(input);
       if (path.endsWith("/api/health")) {
-        return new Response(JSON.stringify({ ok: true }));
+        return new Response(JSON.stringify({
+          ok: true,
+          capabilities: { codeExecution: true }
+        }));
       }
       if (path.endsWith("/api/session")) {
         return new Response(JSON.stringify({ learningMode: true, phase: "practicing", concepts: [] }));
@@ -142,6 +145,7 @@ describe("web workspace store SSE handling", () => {
 
     expect(useLearningWorkspace.getState().session?.phase).toBe("practicing");
     expect(useLearningWorkspace.getState().pending).toEqual([interaction]);
+    expect(useLearningWorkspace.getState().codeExecutionEnabled).toBe(true);
     const es = FakeEventSource.last();
     expect(es).not.toBeNull();
     expect(es?.url).toContain(`token=${token}`);
@@ -168,6 +172,25 @@ describe("web workspace store SSE handling", () => {
     expect(state.transcript).toHaveLength(1);
     expect(state.transcript[0]?.kind).toBe("submitted");
     expect(state.transcript[0]?.answerText).toBe("B");
+  });
+
+  it("cancelled removes only the matching pending interaction (idempotent)", () => {
+    const cancelled = singleChoice("cancelled_1");
+    const remaining = singleChoice("remaining_1");
+    useLearningWorkspace.setState({ pending: [cancelled, remaining] });
+    useLearningWorkspace.getState().connect();
+    const es = FakeEventSource.last();
+
+    es?.dispatch("interaction.cancelled", {
+      interactionId: cancelled.id,
+      reason: "learning_stopped"
+    });
+    es?.dispatch("interaction.cancelled", {
+      interactionId: cancelled.id,
+      reason: "learning_stopped"
+    });
+
+    expect(useLearningWorkspace.getState().pending).toEqual([remaining]);
   });
 
   it("submitSuccess then late resolved event does not double-frame (QA regression)", () => {

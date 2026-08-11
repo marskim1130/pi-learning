@@ -57,4 +57,6 @@ export interface LearningState {
   phase: LearningPhase;
   concepts: Record<string, ConceptState>;
   recentAttempts: AttemptSummary[];
+  /** Bounded idempotency ledger; optional for snapshots written before v0.1. */
+  recordedInteractionIds?: string[];
 }

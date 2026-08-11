@@ -87,7 +87,7 @@ export function createAskCodeTool(dependencies: CodeToolDependencies = {}) {
         content: [
           {
             type: "text",
-            text: `Learner submitted code in ${resolved.answer.language}.`
+            text: `Learner submitted code in ${resolved.answer.language}:\n${resolved.answer.code}`
           }
         ],
         details
