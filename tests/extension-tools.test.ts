@@ -42,7 +42,7 @@ describe("learning tools", () => {
       undefined
     );
     expect(result).toEqual({
-      content: [{ type: "text", text: "Learner selected option B." }],
+      content: [{ type: "text", text: "Learner selected option B (interaction q_test)." }],
       details: {
         interactionId: "q_test",
         type: "single_choice",
@@ -142,7 +142,7 @@ describe("learning tools", () => {
       "✔ 完成"
     ]);
     expect(result).toEqual({
-      content: [{ type: "text", text: "Learner selected options A, B." }],
+      content: [{ type: "text", text: "Learner selected options A, B (interaction q_multi_test)." }],
       details: {
         interactionId: "q_multi_test",
         type: "multi_choice",
@@ -309,7 +309,7 @@ describe("learning tools", () => {
       content: [
         {
           type: "text",
-          text: "Learner submitted this free response:\nA trait bound constrains T."
+          text: "Learner submitted this free response:\nA trait bound constrains T.\n(interaction free_test)"
         }
       ],
       details: {
@@ -357,7 +357,7 @@ describe("learning tools", () => {
       content: [
         {
           type: "text",
-          text: "Learner submitted code in rust:\nfn identity<T>(value: T) -> T { value }"
+          text: "Learner submitted code in rust:\nfn identity<T>(value: T) -> T { value }\n(interaction code_test)"
         }
       ],
       details: {

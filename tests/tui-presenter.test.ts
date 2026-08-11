@@ -88,7 +88,7 @@ describe("TUI custom editor presenter (ctx.mode === 'tui')", () => {
       content: [
         {
           type: "text",
-          text: "Learner submitted code in rust:\nfn identity<T>(value: T) -> T { value }"
+          text: "Learner submitted code in rust:\nfn identity<T>(value: T) -> T { value }\n(interaction code_tui)"
         }
       ],
       details: {

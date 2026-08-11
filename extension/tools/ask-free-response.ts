@@ -78,7 +78,7 @@ export function createAskFreeResponseTool(
         content: [
           {
             type: "text",
-            text: `Learner submitted this free response:\n${resolved.answer.text}`
+            text: `Learner submitted this free response:\n${resolved.answer.text}\n(interaction ${resolved.interactionId})`
           }
         ],
         details

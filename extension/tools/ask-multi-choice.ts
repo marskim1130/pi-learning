@@ -93,7 +93,7 @@ export function createAskMultiChoiceTool(
         content: [
           {
             type: "text",
-            text: `Learner selected options ${resolved.answer.optionIds.join(", ")}.`
+            text: `Learner selected options ${resolved.answer.optionIds.join(", ")} (interaction ${resolved.interactionId}).`
           }
         ],
         details

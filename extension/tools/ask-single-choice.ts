@@ -93,7 +93,7 @@ export function createAskSingleChoiceTool(
         content: [
           {
             type: "text",
-            text: `Learner selected option ${resolved.answer.optionId}.`
+            text: `Learner selected option ${resolved.answer.optionId} (interaction ${resolved.interactionId}).`
           }
         ],
         details
