@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 interface PackageManifest {
   private?: boolean;
   main?: string;
+  license?: string;
   dependencies?: Record<string, string>;
   keywords?: string[];
   pi?: {
@@ -53,5 +54,9 @@ describe("published Pi package", () => {
     expect.soft(manifest.pi?.extensions).toContain("./extension/index.ts");
     expect.soft(archivedPaths).toContain("extension/index.ts");
     expect.soft(archivedPaths).toContain("web/dist/index.html");
+    // npm refuses to publish without a resolvable license; the tarball must
+    // carry the file so downstream installs know the terms.
+    expect.soft(manifest.license).toBe("MIT");
+    expect.soft(archivedPaths).toContain("LICENSE");
   }, 30_000);
 });

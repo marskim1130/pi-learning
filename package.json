@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Structured learning interactions for Pi Coding Agent",
+  "license": "MIT",
   "keywords": [
     "pi-package",
     "pi-extension",
@@ -20,7 +21,8 @@
   "files": [
     "extension/",
     "web/dist/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "workspaces": [
     "web"
@@ -41,6 +43,8 @@
     "build:web": "npm --prefix web run build",
     "prepack": "npm run build:web",
     "check": "npm run typecheck && npm run typecheck:web && npm test",
+    "e2e": "node tests/e2e-rpc.mjs",
+    "e2e:browser": "playwright test",
     "pi": "pi -e ./extension/index.ts"
   },
   "peerDependencies": {
@@ -56,6 +60,7 @@
   "devDependencies": {
     "@earendil-works/pi-ai": "0.84.0",
     "@earendil-works/pi-coding-agent": "0.84.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "24.12.4",
     "jsdom": "^30.0.1",
     "typebox": "1.3.7",
