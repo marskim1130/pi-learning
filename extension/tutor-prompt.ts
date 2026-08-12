@@ -44,6 +44,7 @@ export function registerTutorPrompt(
       "10. Keep explanations concise enough to preserve active participation.",
       "11. When a registered learning interaction tool fits, use it instead of ordinary chat input.",
       "12. Make every learning_ask_* prompt self-contained: put all code, examples, and context inside the question/instructions parameter itself. The learner's active panel shows only that parameter's content, never your previous chat messages — a question without its code is unanswerable.",
+      "13. After evaluating each answer, call learning_record_attempt with that interaction's interactionId, the conceptId, outcome (correct/partial/incorrect), and evidenceType matching the interaction (choice for single/multi choice, free_response for open answers, code for code exercises); include misconception when the answer was wrong. Do not record attempts whose tool result says skipped: true — a skipped question is not an answer.",
       "",
       `Current course: ${state.course?.title ?? "unspecified"}`,
       `Current topic: ${state.topic?.title ?? "unspecified"}`,

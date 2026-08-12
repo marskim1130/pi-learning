@@ -55,7 +55,8 @@ npm audit --omit=dev
 ## 发布前阻断项
 
 1. 仓库没有 `LICENSE`。不要擅自选择许可证；发布者需明确 MIT、Apache-2.0 或其他授权方案后补文件和 package metadata。
-2. 规格 37 的真人 E2E 尚未执行：需要有效模型凭据运行 `npm run pi`，输入 `/learn rust generics`，验证模型主动调用工具、Web/TUI 作答、反馈和 mastery 刷新。
+2. 规格 37 的真人 E2E 已自动化（`tests/e2e-rpc.mjs` + `tests/e2e-browser.spec.ts`，真实模型），
+   结果见 `docs/e2e-report.md`；仍建议发布前由真人跑一次 `npm run pi` + `/learn rust trait bound` 感受交互。
 3. npm 发布和 Pi 官方收录仍需发布者账号/官方流程，本轮只完成技术发布准备与隔离安装验证。
 
 ## 已知未完成项
@@ -65,6 +66,9 @@ npm audit --omit=dev
 - 真正隔离的代码运行需要 OS/container 级 CPU、内存、网络和进程树限制。
 - MathText 对转义美元符号和代码块内数学分隔符仍有边缘限制。
 - `reviewing` phase 目前没有自动触发事件（无 /learn-review），只能经持久化恢复保留。
+- 规格 37 的自动化 E2E（`docs/e2e-report.md`）消费真实模型额度，不在 `npm test` 内；
+  模型偶尔只诊断不出题，harness 会 nudge 引导（见报告「模型方差」）。
+- 本机全局 `pi` 为 0.74.0，与仓库依赖的 0.84.0 存在版本偏差；E2E 固定用仓库 CLI（0.84.0）运行。
 
 ## 关键文件
 

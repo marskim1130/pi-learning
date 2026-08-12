@@ -6,3 +6,7 @@ coverage/
 # web frontend build artifacts & deps
 web/dist/
 web/node_modules/
+
+# Playwright E2E output
+test-results/
+playwright-report/

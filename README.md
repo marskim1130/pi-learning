@@ -142,6 +142,35 @@ Pi Extension entry
 
 `extension/index.ts` 只负责装配。协议、Broker、状态、命令和每个 Tool 都是独立模块，并通过公开接口测试。
 
+## 验证命令
+
+```powershell
+npm ci
+npm run check
+npm --workspace web test
+npm run build:web
+node tests/rpc-smoke.mjs
+npm pack --dry-run --json
+npm audit --omit=dev
+```
+
+## E2E 验收（规格 37，真模型）
+
+规格 37 的人工/端到端验收场景由两套真实模型 harness 覆盖，结果见
+`docs/e2e-report.md`：
+
+```powershell
+npm run build:web        # 浏览器场景需要 Web 构建产物
+npm run e2e a --timeout 540   # 场景 A：/learn rust trait bound 完整闭环（headless）
+npm run e2e b --timeout 540   # 场景 B：连续答错仍继续教学
+npm run e2e d --timeout 540   # 场景 D：题目等待时 abort
+npm run e2e e --timeout 540   # 场景 E：无浏览器 → TUI fallback
+npm run e2e:browser           # 场景 A 浏览器侧 + 场景 C 刷新恢复（系统 Edge）
+```
+
+它们会启动真实模型并消费额度，**不属于** `npm test`。模型可用
+`PI_E2E_MODEL` 覆盖，缺省用 Pi 保存的默认模型。
+
 ## 已知限制
 
 - 当前实现覆盖规格 Milestone 0-7 主体（TUI + Web 往返闭环 + MultiChoice + mastery + 流式 transcript/Markdown/KaTeX + readOnlyRanges + 组件单测）。未完成项：Monaco Language Server、真正隔离的代码 runner、跨 session 长期 learner profile（SQLite）、TUI 原生多选组件。
